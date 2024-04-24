@@ -1,15 +1,21 @@
-#set up SIID and PASS of wifi network
+#This is Mikrotik Script that work with hAP ax lite LTE6
+#TO WORK THE wifi1 MUST PRESET LIKE WOORKING STATION WITH CLEAR SECURITY PROFILE
+#set up SSID and PASS of wifi network "%20" IS A BLANK SPASCE 
 :global SSIDName Shelly%203;
 :global PASS 12345678;
 #setiing how long the router will scan for shelly devices 
 :global ScanDurationSec 15;
 #1=yes , 0=no  
+# TURN ON NAME OF THE DEVICE: NAME = NAME OF THE DEVICE "Pro 1" + "number"
 :global ChangeName 1
+#TURN ON OR OF Turning off AP after set up the device
 :global TurnOffAP 1;
+#Turn ON/OFF static ip setup of the devices
 :global EnableStaticIP 0;
 # static IP settings
 :global GW 192.168.88.1;
 :global StaticIPPrefix 192.168.88.;
+#set up from with number static IP must be started to add
 :global StaticIPNUM 34;
 :global MASKNET 255.255.255.0
 :global NameServer 8.8.8.8;
