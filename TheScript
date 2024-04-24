@@ -1,0 +1,69 @@
+#set up SIID and PASS of wifi network
+:global SSIDName Shelly%203;
+:global PASS 12345678;
+#setiing how long the router will scan for shelly devices 
+:global ScanDurationSec 15;
+#1=yes , 0=no  
+:global ChangeName 1
+:global TurnOffAP 1;
+:global EnableStaticIP 0;
+# static IP settings
+:global GW 192.168.88.1;
+:global StaticIPPrefix 192.168.88.;
+:global StaticIPNUM 34;
+:global MASKNET 255.255.255.0
+:global NameServer 8.8.8.8;
+:global ssids [:toarray ""];
+:put "Scanning for Shelly AP in the area... $ScanDurationSec sec ";:foreach i in=([/interface wifi scan wifi1 duration=$ScanDurationSec as-value]) do={
+	if (($i->"ssid")~"Shelly" and ($i->"security")="None") do={
+		:set ssids ($ssids,($i->"ssid"))
+		}
+	};
+:put "$[:len $ssids] devices was found!";
+delay 2s;
+:set $totalssids [:len $ssids];
+:foreach j in=$ssids do={ 
+	:set $count ($count+1);
+	:put "connecting to $j device $count from $totalssids";
+	/interface/wifi/set wifi1 configuration.ssid=$j;
+	:local counter 0;
+	:local badCount 0;
+	:local DevName "";
+	:local ip [/ip dhcp-client get wifi1 address ];
+	# :put [:len $ip];
+	:while ($counter < 60 and [:len $ip]=0 ) do={
+		:delay 1s;
+		:set counter ($counter+1);
+		:set ip [/ip dhcp-client get wifi1 address ];
+		};
+		:delay 1s;
+	:if ([:len $ip] !=0) do={
+		:put "Connect!!!";
+		:if ($ChangeName=1) do={
+		:put "Changing The Name of the Device ";
+	    :set DevName [:pick $j 6 [:find $j "-"]];		 
+		:local result [/tool/fetch url="http://192.168.33.1/rpc/Sys.SetConfig?config={\"device\":{\"name\":\"$DevName$count\"}}"];	
+		delay 1s;}		
+:put "Turn on cloud:";
+/tool/fetch url="http://192.168.33.1/rpc/Cloud.SetConfig?config={\"enable\":true}";
+		delay 2s;
+:put "Setup WiFi Network:";
+		:if ($EnableStaticIP=1) do={
+		
+			/tool/fetch url="http://192.168.33.1/rpc/WiFi.SetConfig?config={\"sta\":{\"ssid\":\"$SSIDName\",\"pass\":\"$PASS\",\"enable\":true,\"ipv4mode\":\"static\",\"ip\":\"$StaticIPPrefix$StaticIPNUM\",\"netmask\":\"$MASKNET\",\"gw\":\"$GW\",\"nameserver\":\"$NameServer\"}}";	
+			:set StaticIPNUM ($StaticIPNUM+1)
+			} else={
+			/tool/fetch url="http://192.168.33.1/rpc/WiFi.SetConfig?config={\"sta\":{\"ssid\":\"$SSIDName\",\"pass\":\"$PASS\",\"enable\":true}}";
+			}
+		:if ($TurnOffAP=1) do={
+			delay 1s;
+			:put "Turning of acces point ";
+			/tool/fetch url="http://192.168.33.1/rpc/WiFi.SetConfig?config={\"ap\":{\"enable\":false}}";
+		}
+	} else={
+		:put "canot optain IP adress from the device : time out";
+		:set badCount ($badCount+1);
+		} 
+	}
+	:put "Sucseed seting up $($count-$badCount) devices , $badCount devices with ERROR!"
+	:beep frequency=10000 length=1s;
