@@ -6,7 +6,7 @@
 #setiing how long the router will scan for shelly devices 
 :global ScanDurationSec 15;
 #1=yes , 0=no  
-# TURN ON NAME OF THE DEVICE: NAME = NAME OF THE DEVICE "Pro 1" + "number"
+# TURN ON/OFF AUTOMATIC NAMED DEVICE: NAME = NAME OF THE DEVICE + PLUS ACCSEDING NUMBER   example = "Pro 1" + "number"
 :global ChangeName 1
 #TURN ON OR OF Turning off AP after set up the device
 :global TurnOffAP 1;
