@@ -23,8 +23,10 @@ Introducing a dynamic MikroTik script designed to seamlessly integrate numerous 
 1. Open the script file (ThScript.rsc) in a text editor.
 2. Modify the configurable settings within the script.
 3. Network selection for Shelly devices.
+   
    ```bash
   :global SSIDName Shelly%203;
+   ```bash
   :global PASS 12345678;
   
 Automatic AP shutdown after device connection.
