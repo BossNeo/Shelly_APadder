@@ -21,8 +21,8 @@ Introducing a dynamic MikroTik script designed to seamlessly integrate numerous 
    /file upload file-name=TheScript.rsc
 ## Configuration
 1. Open the script file (ThScript.rsc) in a text editor.
-2. Modify the configurable settings within the script:
-3.Network selection for Shelly devices.
+2. Modify the configurable settings within the script.
+3. Network selection for Shelly devices.
    ```bash
   :global SSIDName Shelly%203;
   :global PASS 12345678;
