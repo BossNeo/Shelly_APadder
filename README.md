@@ -24,10 +24,9 @@ Introducing a dynamic MikroTik script designed to seamlessly integrate numerous 
 2. Modify the configurable settings within the script.
 3. Network selection for Shelly devices.
    
-   ```bash
-  :global SSIDName Shelly%203;
-   ```bash
-  :global PASS 12345678;
+  :global SSIDName YourSSID;
+
+  :global PASS YourPass;
   
 Automatic AP shutdown after device connection.
 :global TurnOffAP 1;  // 1 is on 0 is off
