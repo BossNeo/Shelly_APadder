@@ -1,16 +1,16 @@
 #This is Mikrotik Script that work with hAP ax lite LTE6
 #TO WORK THE wifi1 MUST PRESET UP LIKE WOORKING STATION WITH CLEAR SECURITY PROFILE
-#set up SSID and PASS of wifi network "%20" IS A BLANK SPASCE 
+#set up SSID and PASS of wifi network that devices need to be connect, use "%20" as A BLANK SPASCE 
 :global SSIDName Shelly%203;
-:global PASS 12345678;
+:global PASS 11111111;
 #setiing how long the router will scan for shelly devices 
 :global ScanDurationSec 15;
-#1=yes , 0=no  
+#Set up flags for settings 1=yes , 0=no  
 # TURN ON/OFF AUTOMATIC NAMED DEVICE: NAME = NAME OF THE DEVICE + PLUS ACCSEDING NUMBER   example = "Pro 1" + "number"
 :global ChangeName 1
 #TURN ON OR OF Turning off AP after set up the device
 :global TurnOffAP 1;
-#Turn ON/OFF static ip setup of the devices
+#Turn ON/OFF static ip setup of the devices. Static ip setup devices by accseding order and need to be set parameters for starting point.
 :global EnableStaticIP 0;
 # static IP settings
 :global GW 192.168.88.1;
@@ -19,6 +19,9 @@
 :global StaticIPNUM 34;
 :global MASKNET 255.255.255.0
 :global NameServer 8.8.8.8;
+
+#:END OF SETUP SCRIPTS
+#START THE SCRIPT
 :global ssids [:toarray ""];
 :put "Scanning for Shelly AP in the area... $ScanDurationSec sec ";:foreach i in=([/interface wifi scan wifi1 duration=$ScanDurationSec as-value]) do={
 	if (($i->"ssid")~"Shelly" and ($i->"security")="None") do={
