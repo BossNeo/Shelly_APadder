@@ -133,6 +133,19 @@ class ServiceTests(unittest.TestCase):
         self.service.switch(["site1", "site2"], False)
         self.assertTrue(all(c[2] in ("*3", "*4") for c in self.router.calls))
 
+    def test_mld_radios_block_all_mutations_before_touching_router(self):
+        for index in (0, 1):
+            with self.subTest(radio=index):
+                self.router.tables[WIFI][index]["mld-interface"] = "mld1"
+                with self.assertRaisesRegex(ValueError, "MLD/MLO"):
+                    self.service.switch(["site1"], False)
+                with self.assertRaisesRegex(ValueError, "MLD/MLO"):
+                    with self.service.station():
+                        self.fail("MLD station session must never start")
+                self.router.tables[WIFI][index].pop("mld-interface")
+        self.assertEqual(self.router.calls, [])
+        self.assertIsNone(self.store.data["recovery"])
+
     def test_station_exception_restores_original_state_and_never_touches_5ghz(self):
         before = copy.deepcopy(self.router.tables)
         with self.assertRaisesRegex(RuntimeError, "failure"):

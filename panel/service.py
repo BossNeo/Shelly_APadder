@@ -51,6 +51,8 @@ class Service:
         protected = by_name.get(self.config.get("protected_5g"))
         if not radio or not protected or radio[".id"] == protected[".id"]:
             raise ValueError("Задай различни и съществуващи radio_2g и protected_5g в config.json.")
+        if any(row.get("mld-interface") not in (None, "", "none") for row in (radio, protected)):
+            raise ValueError("Радиата участват в MLD/MLO. Нужна е отделна проверена конфигурация за независим 5 GHz достъп преди промени от панела.")
         if not str(radio.get("channel.band", "")).startswith("2ghz"):
             raise ValueError("Радиото за Shelly трябва да има потвърден channel.band=2ghz-…")
         if not str(protected.get("channel.band", "")).startswith("5ghz"):

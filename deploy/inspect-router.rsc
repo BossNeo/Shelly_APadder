@@ -8,7 +8,7 @@
 /system/device-mode/print
 :put "=== WIFI (selected properties) ==="
 :foreach item in=[/interface/wifi/print as-value detail] do={
-    :put ("name=" . ($item->"name") . " master=" . ($item->"master-interface") . " band=" . ($item->"channel.band") . " mode=" . ($item->"configuration.mode") . " ssid=" . ($item->"configuration.ssid") . " disabled=" . ($item->"disabled"))
+    :put ("name=" . ($item->"name") . " master=" . ($item->"master-interface") . " mld=" . ($item->"mld-interface") . " band=" . ($item->"channel.band") . " mode=" . ($item->"configuration.mode") . " ssid=" . ($item->"configuration.ssid") . " disabled=" . ($item->"disabled"))
 }
 :put "=== BRIDGES ==="
 :foreach item in=[/interface/bridge/print as-value] do={ :put ("name=" . ($item->"name")) }
