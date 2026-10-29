@@ -1,4 +1,6 @@
 *
+!go.mod
+!LICENSE
 !panel/
 !panel/**
 panel/**/__pycache__/

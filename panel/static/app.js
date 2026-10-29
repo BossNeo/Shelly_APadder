@@ -66,7 +66,7 @@ $('login-form').addEventListener('submit',e=>{e.preventDefault();action(async()=
 $('logout').onclick=()=>action(async()=>{await api('logout',{});csrf='';showLogin();});
 $('refresh').onclick=()=>action(refresh);
 $('scan').onclick=()=>action(()=>start('scan'));$('provision').onclick=()=>action(()=>start('provision'));
-$('stop').onclick=()=>action(async()=>{await api('stop',{});toast('Спиране… Текущата заявка може да отнеме до 55 секунди.');});
+$('stop').onclick=()=>action(async()=>{await api('stop',{});toast('Спиране… Текущата заявка може да отнеме до 20 секунди.');});
 $('recover').onclick=()=>action(async()=>{await api('recover',{});await refresh();});
 for(const [id,on]of [['all-on',true],['all-off',false]])$(id).onclick=()=>action(async()=>{await api('switch',{interfaces:state.interfaces.filter(n=>n.managed).map(n=>n.name),enabled:on});await refresh();});
 $('new-project').onclick=()=>$('project-dialog').showModal();$('close-dialog').onclick=()=>$('project-dialog').close();

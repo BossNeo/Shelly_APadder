@@ -184,6 +184,8 @@ def main():
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8088)
     args = parser.parse_args()
+    if not args.demo:
+        parser.error("The Python prototype is demo-only. Use the compact Go backend for a real router; see docs/INSTALL.bg.md.")
     store = Store(args.data)
     if args.demo:
         from .demo import DemoService, demo_config

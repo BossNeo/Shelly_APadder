@@ -1,78 +1,121 @@
-# Локална Shelly станция: инсталация
+# Chateau: локален панел във вътрешната памет
 
-**Статус: подготвен код, без инсталация или изпитване на физически рутер.** Това ръководство подготвя ARM64 инсталация за Chateau LTE7 ax. Преди промени провери действителните board-name, архитектура, версия, Wi-Fi драйвер и връзки между радиата; не избирай образ само по предполагаемия модел.
+Панелът е един статичен Go ARM64 изпълним файл с вграден български интерфейс. Няма CDN, облак или външни библиотеки. След качване работи без интернет. Container архивът е построен; извличането на RouterOS и работата с физическо Shelly предстоят.
 
-## Проверка
+## Потвърдена конфигурация
 
-Използвай `deploy/inspect-router.rsc` в RouterOS Terminal. Той само чете и отпечатва избрани настройки. Преди инсталиране запази и свали export и криптирано binary backup; не споделяй show-sensitive export.
+| Параметър | Стойност |
+| --- | --- |
+| Устройство | Chateau LTE7 ax, `S53UG+5HaxD2HaxD`, ARM64 |
+| RouterOS | 7.21.5, инсталирани `container` и `wifi-qcom` |
+| Памет при проверката | 1 GiB RAM; свободни 89.7 MiB от 128 MiB NAND |
+| LAN | `bridge`, `192.168.89.1/24` |
+| Защитено 5 GHz | `wifi1`, `CONTROLDOM-5G` |
+| Работно 2.4 GHz | `wifi2`, `CONTROLDOM` |
+| Изключени работни SSID | `wifi3` Alexievi_EERO; `wifi4` Oren_WIFI; `wifi5` Alexievi |
+| WAN | `ether1`, DHCP от първия рутер `192.168.88.1` |
+| Постоянни файлове | коренът на Files, без отделна `flash` папка |
 
-Нужни са точният `board-name`, версия и архитектура, подходящият Wi-Fi драйвер за хардуера и съответстващ `container` пакет, физическите 2.4/5 GHz радиа, съществуващите виртуални мрежи, LAN bridge и свободно място. Chateau LTE7 ax използва `wifi-qcom`; не го инсталирай вместо друг драйвер на различен модел. Панелът не работи с CAPsMAN радио, радио с директен IP или със съществуващ DHCP client. Не предполага, че `wifi1` е 2.4 GHz.
+`deploy/config.example.json` съответства на тази конфигурация и започва с `allow_changes=false`. За друго устройство проверете всички стойности отново. При автоматичен band панелът сверява радиата с `/interface/wifi/radio`, вместо да гадае по SSID. MLD/MLO и CAPsMAN радиа се блокират. Работното радио не трябва да има собствен IP/DHCP client.
 
-Преди промени се отказват и радиа с `mld-interface`: MLD/MLO конфигурацията изисква отделна проверка и независим 5 GHz достъп. Панелът не разделя MLD автоматично. Container образът по-долу е ARM64; не го използвай върху устройство, което отчита архитектура `arm`.
+## Образ и памет
 
-## Памет и образ
+Използва се директория `shelly-panel` във вътрешната памет. Не е необходим `/partitions repartition`: той е за отделни RouterOS инсталации, преформатира NAND и рестартира рутера.
 
-Chateau LTE7 ax има 1 GB RAM и 128 MB NAND. `/partitions` разделя паметта за отделни RouterOS инсталации; `repartition` преформатира NAND и рестартира. За панела не е необходим. Използвай директория/том за приложението, за предпочитане на подготвен USB носител. Няма включени команди за форматиране. Вътрешна инсталация изисква измерване на извлечения образ и свободното място с резерв за обновяване на RouterOS.
+Образът е приблизително 3 MB компресиран / 7.5 MB файлове след извличане. Build записва точните размери, SHA256 и консервативния минимум свободно място в `image-size.json`. Минимумът включва три копия на извлечените файлове, архива и 32 MiB резерв. Проверете мястото преди и след импорта. Постоянните данни са ограничени до 4 MiB и 500 операции; обновяването на екрана не записва на NAND.
 
-На компютър с Docker и buildx:
+Build на компютър с официален Go 1.24+ и Python 3.12+:
 
 ```sh
-docker buildx build --platform linux/arm64 --load -t shelly-panel:local .
-docker save --output shelly-panel-arm64.tar shelly-panel:local
+python scripts/build_compact.py --go /absolute/path/to/go
 ```
 
-Първото построяване изтегля официалния Python base image. Прехвърли готовия tar локално; рутерът не тегли образа и приложението няма външни зависимости. В сесията няма Docker/Podman, затова образът не е построен или проверен.
+Резултат: `output/compact/shelly-panel-arm64.tar.gz`. Скриптът проверява статичния ARM64 ELF, manifest и хешовете на Docker архива. Не изисква Docker или външни Go modules. Алтернатива: `docker buildx build --platform linux/arm64 --load -t shelly-panel:compact-arm64 .`, след това `docker save`.
 
-## RouterOS и мрежа
+## 1. Backup и device-mode
 
-Инсталирай официалния container пакет за точната RouterOS версия/архитектура. `/system/device-mode/update container=yes` изисква физическото потвърждение, показано от рутера, и може да го рестартира. Не сменяй целия device-mode и не включвай partitions за приложението.
+Свалете актуален backup след поправката на LAN/WAN. `before-lan89-20261029.backup` е отпреди нея. Не споделяйте пароли или sensitive export.
 
-Прегледай `deploy/routeros-network.rsc.example` **по секции** срещу реалния firewall, FastTrack, IPv6 и адресен план. Шаблонът предполага LAN `192.168.88.0/24`, свободен сегмент `172.31.253.0/29` и съществуващи filter правила. Не го импортирай сляпо; `place-before=0` трябва да се адаптира при празен firewall. Контейнерът има достъп само до RouterOS REST; Shelly RPC се изпълнява чрез RouterOS fetch. Панелът е на `192.168.88.1:8088`, WebFig запазва порта си. Не се добавя интернет NAT или WAN публикуване.
+Само на Chateau:
 
-Създай отделен RouterOS потребител с `read,write,test,sensitive,rest-api` и провери точните необходими политики на инсталираната версия. Групите са широки права, а не ACL по меню; ограничи REST до адреса на контейнера. Запази съществуващия административен достъп. За HTTP REST е нужен активен `www` във вътрешния сегмент. За HTTPS използвай `www-ssl` и доверен CA; проверката на сертификати не се изключва.
+```routeros
+/system/device-mode/update container=yes fetch=yes
+```
 
-Задай локално в `/container/envs`, списък `shelly-panel`:
+Потвърдете физически според показаното от рутера: изключване/включване на захранването в указания срок е достатъчно и рестартира Chateau. Не подавайте втори update, докато първият чака, и не задавайте `mode=`. След повторното влизане:
+
+```routeros
+/system/device-mode/print
+```
+
+Нужни са `container: yes` и `fetch: yes`. Fetch изпълнява локалните Shelly RPC заявки; не изисква интернет. Scheduler може да остане `no`, защото възстановяването използва независим `execute` job.
+
+## 2. Вътрешен мрежов сегмент
+
+Прегледайте `deploy/routeros-network.rsc.example` срещу текущите firewall, FastTrack и адреси. Изпълнява се еднократно, по секции. Предполага LAN `bridge` / `192.168.89.0/24`, свободен сегмент `172.31.253.0/29`, съществуващ IPv4 firewall и липса на sp-* интерфейси/вериги.
+
+Създава отделни `sp-containers` и `sp-veth`, адреси `.1` и `.2` във вътрешния сегмент, локален порт `192.168.89.1:8088` и отделни firewall вериги преди общите правила. Разрешава LAN → TCP8088 и контейнер → RouterOS REST TCP80. Блокира останалия трафик през container интерфейса, включително IPv6. WebFig остава на TCP80. WAN, DHCP, LTE, основният LAN bridge и Wi-Fi не се преконфигурират.
+
+Не публикувайте панела към WAN. HTTP REST се използва само в отделния вътрешен сегмент; за HTTPS REST има `ROUTER_CA_FILE` и сертификатите се проверяват. HTTP панелът е за доверен Wi-Fi или кабел. За HTTPS на панела задайте `PANEL_TLS_CERT` и `PANEL_TLS_KEY` с доверен от браузъра сертификат.
+
+## 3. Потребител и пароли
+
+Създайте отделен RouterOS потребител `shelly-panel`, ограничен до `172.31.253.2/32`, с група `read,write,test,sensitive,rest-api`. Това са широки права, не ACL по меню; sensitive е необходимо за точното възстановяване на Wi-Fi паролата. Запазете съществуващия административен достъп.
+
+Задайте локално следните `/container/envs` в списък `shelly-panel`:
 
 | Ключ | Стойност |
 | --- | --- |
-| `ROUTER_URL` | `http://172.31.253.1` за отделния вътрешен сегмент |
-| `ROUTER_USER` | отделният RouterOS потребител |
-| `ROUTER_PASSWORD` | неговата парола |
-| `PANEL_PASSWORD` | отделна парола за панела, минимум 12 знака |
+| ROUTER_URL | `http://172.31.253.1` |
+| ROUTER_USER | `shelly-panel` |
+| ROUTER_PASSWORD | паролата на този отделен потребител |
+| PANEL_PASSWORD | различна парола, минимум 12 знака |
 
-Не записвай реални пароли в Git, снимки или чат. При HTTPS REST монтирай CA и задай `ROUTER_CA_FILE`. За HTTPS на панела са налични `PANEL_TLS_CERT` и `PANEL_TLS_KEY`; сертификатът трябва да е доверен от браузъра. За HTTP панел използвай само доверена WPA2/WPA3 мрежа за управление или кабел.
+Не записвайте реални пароли в Git, снимки, споделени rsc или чат. Не е необходима администраторската парола на рутера в приложението.
 
-## Данни и контейнер
+За локално генериране на две различни пароли има `deploy/chateau-credentials.rsc.example`. Той създава само отделните user/group/env записи и показва паролата за вход в панела. **Не споделяйте изхода от този скрипт.** Задава и Go heap цел `GOMEMLIMIT=64MiB`, `GOMAXPROCS=2`; това не е твърд лимит за целия процес. Прегледайте файла преди еднократно изпълнение; при грешка спрете, без повторно импортиране.
 
-Копирай `deploy/config.example.json` като `config.json` в постоянната директория за `/data`. Попълни точния модел, имената на радиата/bridge, трите разрешени виртуални интерфейса в `allowed_existing` и адресите на панела в `allowed_hosts`. За първия старт остави `allow_changes=false`.
+## 4. Качване и първи старт
 
-Следните команди са само пример за подготвен носител `usb1`, качен tar и готови директории. Провери имената и mount синтаксиса на конкретната RouterOS версия:
+Във Files създайте `shelly-panel` и вътре `data`. Качете `config.json`, копие на `deploy/config.example.json`, в `shelly-panel/data/`; готовия архив — в корена на Files. Проверете имената преди командите:
+
+Директориите могат да се създадат и от Terminal (само ако още липсват):
 
 ```routeros
-/container/mounts/add list=shelly-panel-data src=usb1/shelly-panel/data dst=/data
-/container/add file=usb1/shelly-panel-arm64.tar name=shelly-panel interface=sp-veth root-dir=usb1/shelly-panel/root mountlists=shelly-panel-data envlist=shelly-panel start-on-boot=yes logging=yes
-/container/print
+/file/add name=shelly-panel type=directory
+/file/add name=shelly-panel/data type=directory
 ```
 
-Изчакай извличането да приключи и стартирай точния върнат container ID. Отвори `http://192.168.88.1:8088`. Провери модела, радиата и трите работни мрежи. `/data/state.json` съдържа SSID пароли и recovery журнал; пази носителя и архивите като пароли. Файлът не се сервира през HTTP; новите state файлове са с права 0600 в Linux. Директорията трябва да е writable за container процеса.
+После добавете mount и контейнера:
 
-## Проверки на реалното устройство
+```routeros
+/container/mounts/add list=shelly-panel-data src=shelly-panel/data dst=/data
+/container/add file=shelly-panel-arm64.tar.gz name=shelly-panel interface=sp-veth root-dir=shelly-panel/root mountlists=shelly-panel-data envlist=shelly-panel start-on-boot=yes logging=yes
+/container/print detail
+```
 
-1. Потвърди независим достъп през 5 GHz/кабел и backup извън рутера.
-2. Провери нулирането и възстановяването на директните Wi-Fi настройки и native execute job на конкретния firmware.
-3. Задай `allow_changes=true`, рестартирай контейнера и изпитай един изключен SSID.
-4. Сканирай веднъж; провери точните предишни SSID състояния, bridge порта и радио настройки след връщане.
-5. Добави едно тестово Shelly с оставен AP. Провери DHCP, идентичност и целевия SSID. След това изпитай изключване на AP.
-6. На тестова сесия спри контейнера и провери native watchdog след три минути и startup recovery от журнала.
-7. Изключи WAN и повтори основните операции и нормална работа като рутер.
+Изчакайте извличането да завърши със статус `stopped` без грешка. Проверете лога и свободното място. Стартирайте само този контейнер:
 
-Не променяй Wi-Fi едновременно през WebFig по време на операция: възстановява се снимката от началото. След грешка recovery журналът блокира нови промени и панелът предлага „Възстанови рутера“. При router reboot native jobs не се пазят и е нужен startup recovery.
+```routeros
+/container/start [find where name=shelly-panel]
+```
 
-## Обхват
+От LAN на Chateau отворете **http://192.168.89.1:8088**. Първият старт е само за преглед. Потвърдете модела, двете радиа и трите изключени SSID. При проблем проверете container log, потребителя/правата, www service и специалните firewall правила. Не изключвайте целия firewall.
 
-Shelly Gen2+, фабричен отворен AP без Shelly парола, DHCP. Облачните настройки се запазват. Новите SSID са в съществуващия LAN — не са изолирани VLAN/подмрежи. Статичните настройки от стария скрипт остават само в `TheScript`; за постоянни адреси използвай DHCP reservations след добавяне. Съществуващите три мрежи се добавят като профили с настоящите SSID/пароли и не се преконфигурират.
+`/data` трябва да позволява писане. `state.json` съдържа Wi-Fi пароли и recovery журнал, не се сервира през HTTP и се създава с права 0600. Пазете архивите му като пароли. Scratch образът няма shell; диагностиката е през container log и панела.
 
-Автоматичните тестове симулират RouterOS. Няма визуална проверка през браузъра след спирането на Computer Use; няма доказана съвместимост с физическия рутер.
+## 5. Проверки на устройството
 
-Източници: [хардуер](https://mikrotik.com/product/chateau_lte7_ax), [Containers](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container), [Partitions](https://help.mikrotik.com/docs/spaces/ROS/pages/328103/Partitions), [REST](https://manual.mikrotik.com/docs/developer-guides/rest-api/), [Wi-Fi](https://manual.mikrotik.com/docs/wireless/wifi/), [Shelly WiFi RPC](https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/WiFi/).
+1. Осигурете независим достъп през CONTROLDOM-5G или кабел.
+2. След успешен преглед задайте `allow_changes=true` в config.json и рестартирайте само контейнера.
+3. Включете и изключете един съществуващ SSID. Добавянето му като профил изисква настоящата му парола и не преконфигурира мрежата.
+4. Сканирайте веднъж. Проверете възстановяването на CONTROLDOM, предишните SSID състояния и bridge порта на wifi2.
+5. Добавете едно тестово Shelly с оставен фабричен AP. Проверете идентичност, целевия SSID и DHCP адрес. После изпитайте изключване на AP.
+6. В тестова сесия спрете контейнера: независимият job възстановява след 3 минути. При рестарт на целия рутер job не оцелява; контейнерът при старт възстановява от постоянния журнал.
+7. Изключете WAN и повторете локалните операции.
 
+Преди да премахне recovery журнала и отмени job, панелът повторно прочита възстановените настройки. При несъответствие блокира новите промени. Не редактирайте Wi-Fi паралелно през друг инструмент по време на добавяне.
+
+Новите SSID използват съществуващия LAN/DHCP, без изолирани VLAN/подмрежи. Поддържа се Shelly Gen2+ с отворен фабричен AP, без Shelly автентикация, DHCP; cloud настройката се запазва. `TheScript` е запазен за справка. Python backend е само за демо; на реалния рутер използвайте Go контейнера.
+
+Източници: [Containers](https://help.mikrotik.com/docs/spaces/ROS/pages/84901929/Container), [Device-mode](https://help.mikrotik.com/docs/spaces/ROS/pages/93749258/Device-mode), [REST](https://manual.mikrotik.com/docs/developer-guides/rest-api/), [Wi-Fi](https://manual.mikrotik.com/docs/wireless/wifi/), [Scripting](https://help.mikrotik.com/docs/spaces/ROS/pages/47579229/Scripting), [Shelly WiFi RPC](https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/WiFi/).
