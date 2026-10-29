@@ -100,7 +100,7 @@ def main():
     version = re.search(r'const panelVersion = "([^"]+)"', (ROOT / "panel/main.go").read_text(encoding="utf-8"))
     if not version:
         raise RuntimeError("Panel version missing")
-    report = {"architecture": "linux/arm64", "static_elf_verified": True, "panel_version": version.group(1),
+    report = {"architecture": "linux/arm64", "static_elf_verified": True, "native_script_adapter": True, "panel_version": version.group(1),
               "binary_bytes": len(executable), "unpacked_file_bytes": unpacked,
               "archive_bytes": image.stat().st_size,
               "minimum_free_bytes_estimate": 3 * unpacked + image.stat().st_size + 32 * 1024**2,
@@ -108,6 +108,14 @@ def main():
               "note": "Cross-compiled and archive-verified; RouterOS extraction/start and physical Shelly remain live checks."}
     (out / "image-size.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     (out / "SHA256SUMS.txt").write_text(report["sha256"] + "  " + image.name + "\n", encoding="ascii")
+    probe_env = {**env}
+    probe_env.pop("GOOS", None)
+    probe_env.pop("GOARCH", None)
+    probe = subprocess.check_output([go, "run", "-buildvcs=false", "./panel", "-native-syntax-probe"],
+                                    cwd=ROOT, env=probe_env)
+    if b"SP-NATIVE-SYNTAX-OK" not in probe or len(probe) > 60000:
+        raise RuntimeError("Invalid parse-only native probe")
+    (out / "native-syntax-probe.rsc").write_bytes(probe)
     for source, target in (("deploy/config.example.json", "config.json"),
                            ("deploy/chateau-network.rsc", "chateau-network.rsc"),
                            ("deploy/chateau-install.rsc", "chateau-install.rsc"),
@@ -117,7 +125,8 @@ def main():
                            ("deploy/enable-chateau.ps1", "enable-chateau.ps1"),
                            ("deploy/set-panel-password.ps1", "set-panel-password.ps1"),
                            ("deploy/update-chateau.ps1", "update-chateau.ps1"),
-                           ("docs/INSTALL.bg.md", "INSTALL.bg.md")):
+                           ("docs/INSTALL.bg.md", "INSTALL.bg.md"),
+                           ("docs/INTEGRATION.bg.md", "INTEGRATION.bg.md")):
         shutil.copyfile(ROOT / source, out / target)
     print(json.dumps(report, indent=2))
 

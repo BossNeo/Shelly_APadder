@@ -96,36 +96,79 @@ func portSettings(row Row) Row {
 }
 
 type Job struct {
-	State   string `json:"state"`
-	Kind    string `json:"kind,omitempty"`
-	Message string `json:"message"`
-	Results []Row  `json:"results"`
-	Found   []Row  `json:"found"`
+	State   string  `json:"state"`
+	Kind    string  `json:"kind,omitempty"`
+	Message string  `json:"message"`
+	Results []Row   `json:"results"`
+	Found   []Row   `json:"found"`
+	Events  []Event `json:"events"`
 }
 type Service struct {
-	router   RouterAPI
-	store    *Store
-	config   Config
-	gate     sync.Mutex
-	status   sync.Mutex
-	job      Job
-	cancel   atomic.Bool
-	sleep    func(time.Duration)
-	deadline time.Time
-	demo     bool
+	router         RouterAPI
+	store          *Store
+	config         Config
+	gate           sync.Mutex
+	status         sync.Mutex
+	job            Job
+	cancel         atomic.Bool
+	sleep          func(time.Duration)
+	deadline       time.Time
+	demo           bool
+	eventsMu       sync.Mutex
+	events         []Event
+	eventID        uint64
+	telemetryMu    sync.Mutex
+	telemetryAt    time.Time
+	telemetryData  Row
+	trafficSamples map[string]trafficSample
+	probeAt        time.Time
+	probeStatus    Row
+	pendingWorker  *Recovery
 }
 
 func newService(r RouterAPI, s *Store, c Config) *Service {
 	return &Service{router: r, store: s, config: c, job: Job{State: "idle", Message: "Готов за работа", Results: []Row{}, Found: []Row{}}, sleep: time.Sleep}
 }
-func (s *Service) jobView() Job     { s.status.Lock(); defer s.status.Unlock(); return clone(s.job) }
-func (s *Service) message(m string) { s.status.Lock(); s.job.Message = m; s.status.Unlock() }
+func (s *Service) jobView() Job {
+	s.status.Lock()
+	defer s.status.Unlock()
+	j := clone(s.job)
+	j.Events = s.journal()
+	return j
+}
+func (s *Service) message(m string) {
+	s.status.Lock()
+	s.job.Message = m
+	s.status.Unlock()
+	s.event("info", m)
+}
+
+// A button press may briefly wait for a cached telemetry sample, but never
+// waits behind a long provisioning job. This avoids false "busy" errors.
+func (s *Service) mutationLock() bool {
+	until := time.Now().Add(2 * time.Second)
+	for {
+		if s.gate.TryLock() {
+			return true
+		}
+		s.status.Lock()
+		running := s.job.State == "running"
+		s.status.Unlock()
+		if running || time.Now().After(until) {
+			return false
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
 func (s *Service) writable() error {
 	if !s.config.AllowChanges {
 		return errors.New("Панелът е само за преглед. Завърши проверката и задай allow_changes=true.")
 	}
 	if s.store.read().Recovery != nil {
 		return errors.New("Има невъзстановена сесия. Първо използвай Възстанови рутера.")
+	}
+	if s.store.read().WPS != nil {
+		return errors.New("Първо спри активния WPS прозорец")
 	}
 	return nil
 }
@@ -261,7 +304,7 @@ func (s *Service) overview() (Row, error) {
 	if len(history) > 100 {
 		history = history[len(history)-100:]
 	}
-	return Row{"resource": resource, "interfaces": nets, "projects": projects, "history": history, "warning": warning, "allow_changes": s.config.AllowChanges, "recovery": data.Recovery != nil, "job": s.jobView()}, nil
+	return Row{"resource": resource, "interfaces": nets, "projects": projects, "history": history, "warning": warning, "allow_changes": s.config.AllowChanges, "recovery": data.Recovery != nil, "wps": data.WPS, "job": s.jobView()}, nil
 }
 func (s *Service) saveProject(body Row) (Row, error) {
 	title, ssid, password, existing := strings.TrimSpace(str(body["title"])), str(body["ssid"]), str(body["password"]), str(body["existing_interface"])
@@ -276,7 +319,7 @@ func (s *Service) saveProject(body Row) (Row, error) {
 			return nil, errors.New("Използвай печатни ASCII знаци за WPA2 паролата")
 		}
 	}
-	if !s.gate.TryLock() {
+	if !s.mutationLock() {
 		return nil, errors.New("Изчакай текущата операция")
 	}
 	defer s.gate.Unlock()
@@ -309,7 +352,7 @@ func (s *Service) saveProject(body Row) (Row, error) {
 			return nil, errors.New("LAN bridge не съществува")
 		}
 		p.Interface = "sp-" + p.ID
-		created, e = s.router.Add(wifi, Row{"name": p.Interface, "master-interface": r["name"], "disabled": "yes", "configuration.mode": "ap", "configuration.ssid": ssid, "security.authentication-types": "wpa2-psk", "security.encryption": "ccmp", "security.management-protection": "allowed", "security.passphrase": password, "security.wps": "disable", "datapath.bridge": s.config.Bridge, "comment": marker + p.ID})
+		created, e = s.router.Add(wifi, Row{"name": p.Interface, "master-interface": r["name"], "disabled": "yes", "configuration.mode": "ap", "configuration.ssid": ssid, "security.authentication-types": "wpa2-psk", "security.encryption": "ccmp", "security.management-protection": "allowed", "security.passphrase": password, "security.wps": "disabled", "datapath.bridge": s.config.Bridge, "comment": marker + p.ID})
 		if e != nil {
 			return nil, e
 		}
@@ -322,10 +365,11 @@ func (s *Service) saveProject(body Row) (Row, error) {
 		}
 		return nil, e
 	}
+	s.event("ok", "Запазена мрежа: "+ssid)
 	return Row{"id": p.ID}, nil
 }
 func (s *Service) switchNetworks(names []string, on bool) (Row, error) {
-	if !s.gate.TryLock() {
+	if !s.mutationLock() {
 		return nil, errors.New("Изчакай текущата операция")
 	}
 	defer s.gate.Unlock()
@@ -378,6 +422,7 @@ func (s *Service) switchNetworks(names []string, on bool) (Row, error) {
 	if e = s.verifyNetworkStates(wanted); e != nil {
 		return nil, s.toggleFailure("работните мрежи", e, changed)
 	}
+	s.event("ok", fmt.Sprintf("Работни мрежи: %s · включени=%t", strings.Join(names, ", "), on))
 	return Row{"changed": len(changed)}, nil
 }
 
@@ -450,6 +495,15 @@ func (s *Service) recover() error {
 	if len(res) != 1 || s.config.ExpectedBoard == "" || str(res[0]["board-name"]) != s.config.ExpectedBoard {
 		return errors.New("Recovery журналът не може да се приложи на непотвърден рутер")
 	}
+	if s.pendingWorker != nil {
+		snap.Worker = s.pendingWorker.Worker
+		snap.WorkerFingerprint = s.pendingWorker.WorkerFingerprint
+	}
+	if snap.Worker != "" {
+		if e := s.stopWorker(snap); e != nil {
+			return e
+		}
+	}
 	if _, e := s.router.Call("POST", "execute", Row{"script": recoveryScript(snap), "as-string": ""}); e != nil {
 		return e
 	}
@@ -480,7 +534,14 @@ func (s *Service) recover() error {
 			}
 		}
 	}
-	return s.store.change(func(d *Data) { d.Recovery = nil })
+	e = s.store.change(func(d *Data) { d.Recovery = nil })
+	if e == nil {
+		s.pendingWorker = nil
+	}
+	if e == nil {
+		s.event("ok", "Предишните настройки на 2.4 GHz и bridge са възстановени и проверени")
+	}
+	return e
 }
 func sameSetting(a, b any) bool {
 	boolValue := func(v any) (bool, bool) {
@@ -721,7 +782,7 @@ func (s *Service) start(kind string, body Row) (Row, error) {
 	if kind != "scan" && kind != "provision" {
 		return nil, errors.New("Невалидна операция")
 	}
-	if !s.gate.TryLock() {
+	if !s.mutationLock() {
 		return nil, errors.New("Вече има активна операция")
 	}
 	ok := false

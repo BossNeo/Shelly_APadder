@@ -1,108 +1,65 @@
 'use strict';
-const $ = id => document.getElementById(id);
-let csrf = '', state = null, polling = null, toastTimer, operationBusy = false;
-const statuses = {verified:'Потвърдено',pending:'За проверка',error:'Грешка'};
-function selectedDevices(n) {return n===1?'1 избрано устройство':n+' избрани устройства';}
-function toast(message, error=false) {
-  $('toast').textContent=message; $('toast').className='toast'+(error?' error':''); $('toast').hidden=false;
-  clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,7000);
+const $=id=>document.getElementById(id);
+let csrf='',state=null,metrics={},timer=null,sequence=0,authenticated=false,refreshAt=0,metricAt=0,requestBusy=false,toastTimer;
+const probes=new Map();
+function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
+function button(text,fn,cls=''){const b=node('button',text,'cd-button '+cls);b.type='button';b.onclick=()=>action(fn);return b;}
+function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,8000);}
+async function api(path,body){const options={credentials:'same-origin',headers:{},signal:AbortSignal.timeout(45000)};if(body!==undefined){options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf};options.body=JSON.stringify(body);}const response=await fetch('/api/'+path,options);const data=await response.json();if(!response.ok){if(response.status===401)showLogin();throw Error(data.error||'Операцията не успя');}return data;}
+async function action(fn){try{await fn();}catch(e){if($('dialog').open){let message=$('dialog-body').querySelector('[data-dialog-error]');if(!message){message=node('p',undefined,'cd-dialog-error');message.dataset.dialogError='';message.setAttribute('role','alert');$('dialog-body').append(message);}message.textContent=e.message;}else toast(e.message);}}
+function showLogin(){authenticated=false;csrf='';$('login').hidden=false;$('workspace').hidden=true;$('logout').hidden=true;$('target-password').value='';$('target-password').type='password';closeDialog();clearTimeout(timer);}
+function blocked(){return requestBusy||state?.job?.state==='running'||!!state?.wps||!!state?.recovery||!state?.allow_changes||!!state?.warning;}
+function managed(){const list=(state?.interfaces||[]).filter(n=>n.managed),radio=list.find(n=>!n.virtual);return list.map((n,index)=>({...n,index,on:n.enabled&&(!n.virtual||radio?.enabled)})).sort((a,b)=>Number(b.on)-Number(a.on)||a.index-b.index);}
+function rate(n){return Number.isFinite(Number(n))?(Number(n)/1e6).toLocaleString('bg-BG',{maximumFractionDigits:2})+' Mbit/s':'—';}
+function traffic(name){const t=metrics.traffic?.[name];return t&&(t.available!==false)?'↓ '+rate(t.rx_bps)+' / ↑ '+rate(t.tx_bps):'Изчакване на данни за трафика';}
+function view(history){$('main-content').hidden=history;$('history-content').hidden=!history;$('live-panel').hidden=history;$('main-view').setAttribute('aria-pressed',String(!history));$('history-view').setAttribute('aria-pressed',String(history));location.hash=history?'history':'';}
+function renderEvents(events=[]){
+  if(events.length&&events[events.length-1].id<sequence){sequence=0;$('live-log').replaceChildren();}
+  for(const entry of events.filter(e=>e.id>sequence)){const row=eventRow(entry);$('live-log').prepend(row);sequence=Math.max(sequence,entry.id);}while($('live-log').children.length>6)$('live-log').lastElementChild.remove();
+  $('history-log').replaceChildren(...[...events].reverse().map(eventRow));
 }
-async function api(path, body) {
-  const options={credentials:'same-origin',headers:{}};
-  if (body!==undefined) {options.method='POST';options.headers={'Content-Type':'application/json','X-CSRF-Token':csrf};options.body=JSON.stringify(body);}
-  const response=await fetch('/api/'+path,options), data=await response.json();
-  if(!response.ok) {if(response.status===401)showLogin();throw new Error(data.error||'Операцията не успя.');}
-  return data;
-}
-function node(tag,text,cls) {const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
-function showLogin() {$('login').hidden=false;$('workspace').hidden=true;$('logout').hidden=true;if(polling){clearTimeout(polling);polling=null;}}
-function capacity(value) {const n=Number(value);return Number.isFinite(n)?Math.round(n/1048576)+' MB':'—';}
-function blocked() {return operationBusy||!state?.allow_changes||!!state?.recovery||!!state?.warning&&$('demo-badge').hidden;}
-function busy(on) {operationBusy=on;for(const id of ['new-project','all-on','all-off','scan'])$(id).disabled=blocked();for(const b of document.querySelectorAll('.toggle'))b.disabled=blocked();$('refresh').disabled=on;$('target').disabled=on;$('stop').hidden=!on;$('mode').textContent=on?'Добавяне':'Рутер';$('mode-detail').textContent=on?'Временно използване на 2.4 GHz':'Нормална работа на мрежите';updateProvision();}
-function updateProvision() {
-  const count=document.querySelectorAll('[name=device]:checked').length, project=state?.projects.find(p=>p.id===$('target').value);
-  const target=state?.interfaces.find(n=>n.name===project?.interface), radio=state?.interfaces.find(n=>n.managed&&!n.virtual);
-  $('provision').textContent='Свържи избраните към обекта ('+count+')';
-  let help='';
-  if(!state?.job.found?.length)help='Първо сканирай за Shelly устройства.';
-  else if(!count)help='Маркирай Shelly устройствата от списъка.';
-  else if(!project)help='Избери мрежата на обекта от менюто над устройствата. За съществуваща мрежа първо я запази като обект.';
-  else if(!target?.enabled)help='Включи '+project.ssid+' от списъка с работни мрежи.';
-  else if(radio&&!radio.enabled)help='Включи физическото 2.4 GHz радио от списъка с мрежи.';
-  else help='Ще изпрати Wi-Fi настройките на '+project.ssid+' към '+selectedDevices(count)+' и ще провери свързването им.';
-  $('provision-help').textContent=help;
-  $('provision').disabled=blocked()||!count||!project||!target?.enabled||(radio&&!radio.enabled);
-}
-function render() {
-  $('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
-  const warning=[state.warning,!state.allow_changes?'Панелът е само за преглед. Включването, създаването на мрежи и сканирането още не са разрешени.':''].filter(Boolean).join(' ');
-  $('warning').hidden=!warning;$('warning').textContent=warning;$('recovery').hidden=!state.recovery;
-  $('ram').textContent=capacity(state.resource['free-memory']);$('storage').textContent=capacity(state.resource['free-hdd-space'])+' свободно място';
-  $('router-detail').textContent=state.resource['board-name']+' • RouterOS '+state.resource.version;
-  const managed=state.interfaces.filter(i=>i.managed), protectedNet=state.interfaces.find(i=>i.protected);
-  $('protected-name').textContent=protectedNet?protectedNet.ssid+' • '+protectedNet.name+' • Не се променя от панела.':'Защитеният интерфейс още не е настроен.';
-  $('net-count').textContent=managed.filter(i=>i.enabled).length+' / '+managed.length;$('project-count').textContent=state.projects.length;
-  $('network-list').replaceChildren();
-  for(const network of managed) {
-    const project=state.projects.find(p=>p.interface===network.name), row=node('div',undefined,'network-row'), meta=node('div',undefined,'network-meta');
-    row.append(node('span','⌁','network-icon'));meta.append(node('strong',project?.title||network.ssid||network.name),node('p',network.ssid+' · '+network.name+' · 2.4 GHz'));
-    const toggle=node('button',undefined,'toggle');toggle.type='button';toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',network.enabled);toggle.setAttribute('aria-label',(network.enabled?'Изключи ':'Включи ')+(project?.title||network.name));
-    toggle.addEventListener('click',()=>switchNetworks([network.name],!network.enabled));
-    row.append(meta,node('span',network.enabled?'Включена':'Изключена','network-status'+(network.enabled?' on':'')),toggle);$('network-list').append(row);
+function eventRow(e){const row=node('li',undefined,'cd-live-entry');row.append(node('time',new Date(e.time*1000).toLocaleTimeString('bg-BG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})),node('span',e.level==='error'?'ГРЕШКА':e.level==='ok'?'OK':'ИНФО','cd-event-level cd-event-'+e.level),node('span',e.message));return row;}
+function renderJob(job){state.job=job;$('job-message').textContent=job.message;renderEvents(job.events);$('stop').hidden=job.state!=='running';$('results').replaceChildren(...(job.results||[]).map(r=>node('div',r.ssid+' · '+(r.name||'')+(r.ip?' · '+r.ip:'')+' · '+(r.message||r.state)+(r.ap_disabled?' · AP изключен':''))));plan();controls();}
+function controls(){const disabled=blocked();for(const id of ['new-project','all-on','all-off','scan','provision'])$(id).disabled=disabled;for(const input of $('script-form').elements)input.disabled=disabled;for(const el of document.querySelectorAll('[data-write]'))el.disabled=disabled||el.dataset.off==='true';$('stop-wps').disabled=requestBusy;}
+function renderNetworks(){
+  const nets=managed();$('network-count').textContent='2.4 GHz · '+nets.filter(n=>n.on).length+' включени';$('network-list').replaceChildren();
+  for(const n of nets){const row=node('div',undefined,'cd-network'),meta=node('div',undefined,'cd-net-meta');meta.append(node('strong',n.ssid||n.name),node('small',n.name+' · '+(n.virtual?'Мрежа за обект':'Основна мрежа')));
+    const count=metrics.clients_available===false||!metrics.clients?null:Number(metrics.clients[n.name]||0),running=state.job.state==='running';
+    meta.append(node('small',(n.on?(running?'Временно паузирана':'Включена'):'Изключена')+' · '+(count===null?'клиенти: няма данни':(n.on&&!running?count:0)+' свързани устройства'),'cd-net-status'+(n.on?' cd-on':'')),node('small',n.on&&!running?traffic(n.name):'↓ 0 / ↑ 0 Mbit/s','cd-net-traffic'));
+    const actions=node('div',undefined,'cd-net-actions'),password=button('Покажи парола',()=>showPassword(n),'cd-password-button');password.setAttribute('aria-label','Покажи парола за '+(n.ssid||n.name));
+    const wps=button('WPS',()=>confirmWPS(n),'cd-wps-button');wps.dataset.write='';wps.setAttribute('aria-label','WPS за '+(n.ssid||n.name));const toggle=button('',()=>switchNetwork(n),'cd-switch');toggle.dataset.write='';toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',String(n.enabled));toggle.setAttribute('aria-label',(n.enabled?'Изключи ':'Включи ')+(n.ssid||n.name));actions.append(password,wps,toggle);
+    const internet=node('div',undefined,'cd-network-internet'),probe=probes.get(n.name);internet.append(node('span','Интернет: '+(!n.on?'мрежата е изключена':probe?'тестът е от рутера · SSID непроверен':'непроверен')));const check=button('Провери',async()=>{const r=await api('probe',{interface:n.name});probes.set(n.name,r);toast((r.router_status==='reachable'?'Рутерът достига интернет. ':'Няма потвърден отговор от интернет. ')+r.detail);renderNetworks();controls();});check.dataset.write='';check.dataset.off=String(!n.on);check.disabled=!n.on||blocked();internet.append(check);row.append(node('span','⌁','cd-net-icon'),meta,actions,internet);$('network-list').append(row);
   }
-  if(!managed.length)$('network-list').append(node('p','Все още няма разрешени работни мрежи. Създай нов обект или добави съществуващите интерфейси в конфигурацията.','empty'));
-  const selected=$('target').value;$('target').replaceChildren(new Option('Избери обект…',''));
-  for(const project of state.projects){const net=managed.find(n=>n.name===project.interface);$('target').add(new Option(project.title+' · '+project.ssid+(net?.enabled?'':' (изключена)'),project.id));}
-  if(state.projects.some(p=>p.id===selected))$('target').value=selected;
-  const existing=$('existing');existing.replaceChildren(new Option('Създай нова Wi-Fi мрежа',''));
-  for(const net of managed.filter(n=>!state.projects.some(p=>p.interface===n.name)))existing.add(new Option(net.ssid+' · '+net.name,net.name));
-  $('history-list').replaceChildren();
-  for(const item of [...state.history].reverse().slice(0,20)){const row=node('div',undefined,'history-row');row.append(node('span',item.ssid+' · '+(item.project||'')),node('time',new Date(item.time*1000).toLocaleString('bg-BG')),node('span',statuses[item.state]||item.state,'badge '+(item.state==='verified'?'green':'amber')));$('history-list').append(row);}
-  if(!state.history.length)$('history-list').append(node('p','Все още няма операции. Резултатите от добавянето ще се появят тук.','empty'));
-  renderJob(state.job);busy(state.job.state==='running');
+  const selected=$('target').value;$('target').replaceChildren(new Option('Въведи произволна мрежа',''));for(const n of nets)$('target').add(new Option(n.ssid||n.name,n.name));if(nets.some(n=>n.name===selected))$('target').value=selected;controls();
 }
-function renderJob(job) {
-  if(state)state.job=job;
-  $('job-message').textContent=job.message;
-  const checked=new Set([...document.querySelectorAll('[name=device]:checked')].map(n=>n.value));
-  $('devices').replaceChildren();
-  for(const device of job.found||[]){const row=node('div',undefined,'device-row'), label=node('label',undefined,'check'), input=node('input');input.type='checkbox';input.name='device';input.value=device.ssid;input.checked=checked.has(device.ssid);input.disabled=job.state==='running';input.addEventListener('change',updateProvision);label.append(input,node('span',device.ssid));row.append(label,node('small',device.signal+' dBm'));$('devices').append(row);}
-  if(!job.found?.length){const p=node('p','Все още няма открити устройства.','empty');p.append(node('br'),node('span','Включи Shelly устройствата във фабричен AP режим и стартирай сканиране.'));$('devices').append(p);}
-  $('results').replaceChildren();
-  for(const r of job.results||[])$('results').append(node('div',r.ssid+' · '+(statuses[r.state]||r.state)+(r.ip?' · '+r.ip:'')+(r.message?' — '+r.message:'')+(r.ap_disabled?' · AP изключен':''),'result'));
+function renderMetrics(){
+  $('telemetry-time').textContent=metrics.paused?'Пауза по време на операцията':metrics.demo?'ДЕМОНСТРАЦИЯ':metrics.time?new Date(metrics.time*1000).toLocaleTimeString('bg-BG'):'Няма данни';
+  const status=metrics.internet?.status;$('internet-status').textContent=({reachable:'Достъпен',no_reply:'Няма ICMP отговор',demo:'Достъпен · демо',unknown:'Непроверен'})[status]||'Непроверен';$('traffic-status').textContent=traffic('ether1');
+  const lte=metrics.lte||{};$('lte-status').textContent=lte.rsrp?'RSRP '+lte.rsrp:(lte.status==='absent'?'Няма LTE интерфейс':lte.status==='inactive'?'LTE не е активен':'Няма отчетен сигнал');$('lte-detail').textContent=[lte['current-operator'],lte['data-class'],lte.sinr?'SINR '+lte.sinr:'',lte.rsrq?'RSRQ '+lte.rsrq:''].filter(Boolean).join(' · ');
+  $('telemetry-note').textContent=metrics.message||(metrics.warnings||[]).join(' · ')||'RX/↓: към рутера; TX/↑: от рутера. Wi-Fi трафикът включва и локална комуникация.';
 }
-async function refresh() {state=await api('state');render();if(state.job.state==='running')poll();}
-function poll(){clearTimeout(polling);polling=setTimeout(async()=>{try{const job=await api('job');renderJob(job);busy(job.state==='running');if(job.state==='running')poll();else{await refresh();if(job.state==='error')toast(job.message,true);}}catch(e){toast(e.message,true);}},1200);}
-async function action(fn){try{await fn();}catch(e){toast(e.message,true);}}
-async function switchNetworks(interfaces,enabled) {
-  busy(true);
-  try {await api('switch',{interfaces,enabled});await refresh();toast(enabled?'Мрежата е включена.':'Мрежата е изключена.');}
-  catch(e){toast(e.message,true);try{await refresh();}catch{}}
-  finally{busy(state?.job.state==='running');}
+function renderState(){
+  authenticated=true;$('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('warning').hidden=!state.warning&&state.allow_changes;$('warning').textContent=state.warning||'Панелът е само за преглед: allow_changes=false';$('recovery').hidden=!state.recovery;const protectedNet=state.interfaces.find(n=>n.protected);$('protected-name').textContent=(protectedNet?.ssid||'5 GHz')+' · постоянен достъп';$('router-detail').textContent=state.resource['board-name']+' · RouterOS '+state.resource.version+' · свободна RAM '+Math.round(Number(state.resource['free-memory'])/1048576)+' MiB';renderNetworks();renderJob(state.job);renderWPS();
+  $('saved-results').replaceChildren(...[...state.history].reverse().slice(0,30).map(r=>node('p',new Date(r.time*1000).toLocaleString('bg-BG')+' · '+r.ssid+' · '+(r.message||r.state))));
 }
-function confirmOperation(kind,body) {
-  const project=state.projects.find(p=>p.id===body.project), protectedNet=state.interfaces.find(n=>n.protected);
-  $('operation-title').textContent=kind==='scan'?'Сканиране за Shelly':'Свързване на Shelly към обекта';
-  $('operation-detail').textContent=kind==='scan'?'Ще потърси фабричните Wi-Fi мрежи на Shelly. Няма да изпраща настройки към устройствата.':'Ще изпрати Wi-Fi настройките на '+project.ssid+' към '+selectedDevices(body.devices.length)+' и ще провери дали са се свързали.';
-  $('operation-access').textContent='Преди да продължиш, свържи компютъра към '+(protectedNet?.ssid||'защитената 5 GHz мрежа')+' (5 GHz) или LAN порт 2–5.';
-  const dialog=$('operation-dialog');dialog.returnValue='';
-  return new Promise(resolve=>{dialog.addEventListener('close',()=>resolve(dialog.returnValue==='confirm'),{once:true});dialog.showModal();});
-}
-async function start(kind){
-  const body={acknowledge_disconnect:true};
-  if(kind==='provision'){body.project=$('target').value;body.devices=[...document.querySelectorAll('[name=device]:checked')].map(n=>n.value);body.rename=$('rename').checked;body.disable_ap=$('disable-ap').checked;if(!body.project||!body.devices.length)throw new Error('Избери обект и поне едно открито устройство.');}
-  if(!await confirmOperation(kind,body))return;
-  await api(kind,body);busy(true);poll();
-}
-$('login-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{const data=await api('login',{password:$('login-password').value});csrf=data.csrf;$('login-password').value='';await refresh();});});
-$('logout').onclick=()=>action(async()=>{await api('logout',{});csrf='';showLogin();});
-$('refresh').onclick=()=>action(refresh);
-$('scan').onclick=()=>action(()=>start('scan'));$('provision').onclick=()=>action(()=>start('provision'));
-$('stop').onclick=()=>action(async()=>{await api('stop',{});toast('Спиране… Текущата заявка може да отнеме до 20 секунди.');});
-$('recover').onclick=()=>action(async()=>{await api('recover',{});await refresh();});
-for(const [id,on]of [['all-on',true],['all-off',false]])$(id).onclick=()=>switchNetworks(state.interfaces.filter(n=>n.managed).map(n=>n.name),on);
-$('target').onchange=updateProvision;
-$('new-project').onclick=()=>$('project-dialog').showModal();$('close-dialog').onclick=()=>$('project-dialog').close();
-$('existing').onchange=()=>{const net=state.interfaces.find(n=>n.name===$('existing').value);if(net)$('project-form').elements.ssid.value=net.ssid;};
-$('project-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{const body=Object.fromEntries(new FormData(e.target));body.existing_interface=$('existing').value;await api('projects',body);$('project-dialog').close();e.target.reset();await refresh();toast('Обектът е запазен.');});});
-action(async()=>{const session=await api('session');$('demo-badge').hidden=!session.demo;$('demo-login').hidden=!session.demo;$('panel-version').textContent='Локално • Панел '+(session.version||'');csrf=session.csrf||'';if(session.authenticated)await refresh();else showLogin();});
+function renderWPS(){const w=state?.wps;$('wps-banner').hidden=!w;if(!w)return;$('wps-title').textContent='WPS · '+(state.interfaces.find(n=>n.name===w.interface)?.ssid||w.interface);const left=Math.max(0,w.until-Math.floor(Date.now()/1000));$('wps-clock').textContent=String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0');}
+function body(){const form=$('script-form'),data={};for(const el of form.elements)if(el.name)data[el.name]=el.value;for(const key of ['scan_seconds','ip_start'])data[key]=Number(data[key]);for(const key of ['rename','disable_ap','static_ip'])data[key]=form.elements[key].checked;return data;}
+function plan(){const o=body(),box=$('plan');box.replaceChildren(node('h3','Ред на настройване'));let devices=state?.job.found||[];if(!devices.length)devices=[{ssid:'ShellyPlus1-example'},{ssid:'ShellyPlus1-example2'}];const raw=String(o.name_start||''),sep=raw.startsWith('-')?'-':'',num=Number(raw.replace(/^-/,''));const table=node('table',undefined,'cd-history'),head=node('tr');head.append(node('th','Модел'),node('th','Име'),node('th','IP'));table.append(head);devices.forEach((d,i)=>{const model=d.ssid.slice(6,d.ssid.indexOf('-')),row=node('tr');row.append(node('td',model),node('td',o.rename&&Number.isInteger(num)&&num>0?model+sep+(num+i):o.rename?'Невалиден номер':'Без промяна'),node('td',o.static_ip?o.prefix+(o.ip_start+i):'DHCP'));table.append(row);});box.append(table);}
+function dialog(title){const d=$('dialog'),content=$('dialog-body');content.replaceChildren(node('h2',title));if(!d.open)d.showModal();return content;}
+function closeDialog(){$('dialog-body').replaceChildren();$('dialog').close();}
+function confirm(title,text,label='Потвърди'){return new Promise(resolve=>{const c=dialog(title);c.append(node('p',text));const buttons=node('div',undefined,'cd-dialog-actions');buttons.append(button('Отказ',()=>{closeDialog();resolve(false);}),button(label,()=>{closeDialog();resolve(true);},'cd-primary'));c.append(buttons);$('dialog').addEventListener('cancel',()=>resolve(false),{once:true});});}
+async function showPassword(n){const data=await api('password',{interface:n.name}),c=dialog('Wi-Fi парола · '+data.ssid),input=node('input');input.type='text';input.value=data.password;input.readOnly=true;input.setAttribute('aria-label','Wi-Fi парола за '+data.ssid);const message=node('p','Паролата не се записва в журнала.');const actions=node('div',undefined,'cd-dialog-actions'),reveal=button('Скрий паролата',()=>{input.type=input.type==='text'?'password':'text';reveal.textContent=input.type==='text'?'Скрий паролата':'Покажи паролата';});actions.append(reveal,button('Копирай',async()=>{const previous=input.type;input.type='text';input.focus();input.select();let ok=false;try{ok=document.execCommand('copy');}catch{}input.type=previous;if(!ok&&navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(input.value);ok=true;}catch{}}if(!ok){input.type='text';input.select();}message.textContent=ok?'Паролата е копирана.':'Натисни Ctrl+C върху маркираната парола.';},'cd-primary'),button('Затвори',closeDialog));c.append(input,message,actions);}
+async function switchNetwork(n){const names=[n.name],radio=state.interfaces.find(n=>n.managed&&!n.virtual);if(!n.enabled&&n.virtual&&!radio?.enabled)names.unshift(radio.name);requestBusy=true;controls();try{await api('switch',{interfaces:names,enabled:!n.enabled});probes.clear();await refreshState();}finally{requestBusy=false;controls();}}
+async function confirmWPS(n){if(!await confirm('WPS · '+n.ssid,'Ще включи мрежата при нужда и ще отвори WPS за 2 минути. След това мрежата остава включена. Някои виртуални SSID може да не поддържат WPS.','Стартирай WPS'))return;await api('wps',{interface:n.name});await refreshState();}
+async function start(scanOnly){if(blocked())return;if(!scanOnly&&!$('script-form').reportValidity())return;const data=body();if(!Number.isInteger(data.scan_seconds)||data.scan_seconds<1||data.scan_seconds>45)throw Error('Сканиране: 1–45 секунди');const p=state.interfaces.find(n=>n.protected);if(!await confirm(scanOnly?'Само сканиране':'Сканирай и добави към '+data.ssid,'Свържи лаптопа към '+(p?.ssid||'5 GHz')+' или LAN порт 2–5. Потвърждавам временната пауза на 2.4 GHz.'+(!scanOnly?' Всички намерени отворени Shelly ще получат тези настройки.':''),'Използвам 5 GHz или LAN — продължи'))return;requestBusy=true;controls();try{await api('script',{...data,scan_only:scanOnly,acknowledge_disconnect:true});await refreshState();$('live-panel').scrollIntoView({block:'start',behavior:'auto'});}finally{requestBusy=false;controls();}}
+async function refreshState(){state=await api('state');refreshAt=Date.now();renderState();}
+async function tick(){clearTimeout(timer);if(!authenticated||document.hidden)return;try{const wasRunning=state?.job?.state==='running';if(wasRunning){renderJob(await api('job'));if(state.job.state!=='running')await refreshState();}else if(Date.now()-refreshAt>=5000)await refreshState();if(state?.job?.state!=='running'&&Date.now()-metricAt>=5000){metrics=await api('telemetry');metricAt=Date.now();renderMetrics();renderNetworks();}}catch(e){toast(e.message);}finally{if(authenticated)timer=setTimeout(tick,state?.job?.state==='running'?1000:5000);}}
+$('login-form').onsubmit=e=>{e.preventDefault();action(async()=>{const r=await api('login',{password:$('login-password').value});csrf=r.csrf;$('login-password').value='';await refreshState();tick();});};
+$('logout').onclick=()=>action(async()=>{await api('logout',{});csrf='';showLogin();});$('main-view').onclick=()=>view(false);$('history-view').onclick=()=>view(true);$('full-journal').onclick=()=>view(true);
+$('script-form').onsubmit=e=>{e.preventDefault();action(()=>start(false));};$('scan').onclick=()=>action(()=>start(true));$('script-form').oninput=plan;
+$('rename').onchange=()=>{$('name-field').hidden=!$('rename').checked;plan();};$('static-ip').onchange=()=>{$('static-fields').hidden=!$('static-ip').checked;plan();};$('target').onchange=()=>{const n=state.interfaces.find(n=>n.name===$('target').value);if(n)$('target-ssid').value=n.ssid;};$('target-reveal').onclick=()=>{const input=$('target-password');input.type=input.type==='password'?'text':'password';$('target-reveal').textContent=input.type==='password'?'Покажи паролата':'Скрий паролата';};
+$('stop').onclick=()=>action(async()=>{await api('stop',{});toast('Спиране след безопасно възстановяване…');});$('recover').onclick=()=>action(async()=>{await api('recover',{});await refreshState();});$('stop-wps').onclick=()=>action(async()=>{await api('wps',{stop:true});await refreshState();});
+for(const [id,on]of [['all-on',true],['all-off',false]])$(id).onclick=()=>action(async()=>{await api('switch',{interfaces:state.interfaces.filter(n=>n.managed).map(n=>n.name),enabled:on});probes.clear();await refreshState();});
+$('new-project').onclick=()=>{const c=dialog('Нова мрежа за обект'),form=node('form'),fields={};for(const [key,labelText]of [['title','Име на обекта'],['ssid','Wi-Fi име (SSID)'],['password','Wi-Fi парола']]){const label=node('label',undefined,'cd-field'),input=node('input');input.name=key;input.type=key==='password'?'password':'text';input.required=true;input.maxLength=key==='title'?80:key==='ssid'?32:63;if(key==='password')input.minLength=8;label.append(node('span',labelText),input);fields[key]=input;form.append(label);}form.append(node('p','Новата мрежа се създава изключена в съществуващия LAN bridge.'));const save=node('button','Създай мрежата','cd-button cd-primary');save.type='submit';form.append(save,button('Отказ',closeDialog));form.onsubmit=e=>{e.preventDefault();action(async()=>{save.disabled=true;try{await api('projects',Object.fromEntries(new FormData(form)));fields.password.value='';closeDialog();await refreshState();}finally{save.disabled=false;}});};c.append(form);};
+document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(timer);else if(authenticated)tick();});setInterval(renderWPS,1000);
+action(async()=>{const session=await api('session');csrf=session.csrf||'';$('demo-badge').hidden=!session.demo;$('demo-login').hidden=!session.demo;$('panel-version').textContent='Контрол Дом · '+session.version;if(session.authenticated){await refreshState();view(location.hash==='#history');tick();}else showLogin();});

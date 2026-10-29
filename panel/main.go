@@ -28,7 +28,7 @@ import (
 //go:embed static/index.html static/app.js static/style.css static/brand/*
 var assets embed.FS
 
-const panelVersion = "2026.10.29.3"
+const panelVersion = "2026.10.29.4"
 
 type Session struct {
 	CSRF    string
@@ -150,6 +150,22 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out = Row{}
 	case "/api/projects":
 		out, e = a.service.saveProject(body)
+	case "/api/password":
+		out, e = a.service.networkPassword(str(body["interface"]))
+	case "/api/wps":
+		if body["stop"] == true {
+			out, e = a.service.stopWPS()
+		} else {
+			out, e = a.service.startWPS(str(body["interface"]))
+		}
+	case "/api/probe":
+		out, e = a.service.probeNetwork(str(body["interface"]))
+	case "/api/script":
+		if body["acknowledge_disconnect"] != true {
+			e = errors.New("Потвърди използването на 5 GHz или LAN и временната пауза на 2.4 GHz")
+		} else {
+			out, e = a.service.startScript(body)
+		}
 	case "/api/switch":
 		var names []string
 		var on bool
@@ -231,6 +247,13 @@ func (a *App) get(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/api/job":
 		reply(w, 200, a.service.jobView())
+	case "/api/telemetry":
+		out, e := a.service.telemetry()
+		if e != nil {
+			fail(w, 502, e.Error())
+		} else {
+			reply(w, 200, out)
+		}
 	case "/api/state":
 		out, e := a.service.overview()
 		if e != nil {
@@ -295,7 +318,17 @@ func runMain() error {
 	configPath := cliFlag.String("config", "/data/config.json", "Конфигурация")
 	bind := cliFlag.String("bind", "0.0.0.0", "HTTP адрес")
 	port := cliFlag.Int("port", 8088, "HTTP порт")
+	probe := cliFlag.Bool("native-syntax-probe", false, "Print a parse-only RouterOS probe")
 	cliFlag.Parse()
+	if *probe {
+		o := ScriptOptions{SSID: "Probe Network", Password: "probe-only-123", Seconds: 15, Rename: true, CloseAP: true, Static: true, NameStart: "-11", Gateway: "192.168.89.1", Prefix: "192.168.89.", IPStart: 34, Mask: "255.255.255.0", DNS: "192.168.89.1"}
+		p, e := nativeProgram(o, "ShellyPlus1-441793ABCD01", "wifi2", "SPPROBEPARSE", 0, 34)
+		if e != nil {
+			return e
+		}
+		fmt.Println(":local parser [:parse " + rosString(p) + "]; :put \"SP-NATIVE-SYNTAX-OK\";")
+		return nil
+	}
 	store, e := newStore(*data)
 	if e != nil {
 		return errors.New("Не може да се отвори директорията за данни")
@@ -328,6 +361,11 @@ func runMain() error {
 	if *demo {
 		seedDemo(store)
 	}
+	if store.read().WPS != nil {
+		if e := service.recoverWPS(); e != nil {
+			log.Print("WPS възстановяването изисква проверка")
+		}
+	}
 	if store.read().Recovery != nil {
 		if service.recover() != nil {
 			log.Print("Невъзстановена сесия: промените остават блокирани")
@@ -359,6 +397,7 @@ func runMain() error {
 		e = server.ListenAndServe()
 	}
 	if service.gate.TryLock() {
+		_ = service.recoverWPS()
 		_ = service.recover()
 		service.gate.Unlock()
 	}

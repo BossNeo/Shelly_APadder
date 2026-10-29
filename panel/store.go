@@ -31,17 +31,20 @@ type RadioSnapshot struct {
 	Disabled any    `json:"disabled"`
 }
 type Recovery struct {
-	Radio       RadioSnapshot `json:"radio"`
-	Keys        []string      `json:"temporary_keys"`
-	Children    []Row         `json:"children"`
-	Ports       []Row         `json:"ports"`
-	Watchdog    string        `json:"watchdog,omitempty"`
-	Fingerprint Row           `json:"watchdog_fingerprint,omitempty"`
+	Radio             RadioSnapshot `json:"radio"`
+	Keys              []string      `json:"temporary_keys"`
+	Children          []Row         `json:"children"`
+	Ports             []Row         `json:"ports"`
+	Watchdog          string        `json:"watchdog,omitempty"`
+	Fingerprint       Row           `json:"watchdog_fingerprint,omitempty"`
+	Worker            string        `json:"worker,omitempty"`
+	WorkerFingerprint Row           `json:"worker_fingerprint,omitempty"`
 }
 type Data struct {
-	Projects []Project `json:"projects"`
-	History  []Row     `json:"history"`
-	Recovery *Recovery `json:"recovery"`
+	Projects []Project    `json:"projects"`
+	History  []Row        `json:"history"`
+	Recovery *Recovery    `json:"recovery"`
+	WPS      *WPSRecovery `json:"wps,omitempty"`
 }
 type Store struct {
 	mu   sync.Mutex

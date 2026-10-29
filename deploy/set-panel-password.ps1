@@ -4,7 +4,8 @@ param(
     [ValidatePattern('^[A-Za-z0-9_-]{5,64}$')]
     [string]$PanelPassword,
     [Parameter(Mandatory = $true, ParameterSetName = 'Keep')]
-    [switch]$KeepPassword
+    [switch]$KeepPassword,
+    [switch]$EnableManagement
 )
 # Run manually in Windows PowerShell. Updates only the existing panel image and
 # its PANEL_PASSWORD. Router credentials, config.json, state and Wi-Fi are kept.
@@ -32,7 +33,7 @@ $taskPreflight = @'
 {
     :if ([/system/resource/get board-name] != "S53UG+5HaxD2HaxD") do={ :error "Wrong router" };
     :if ([/system/resource/get version] !~ "^7.21") do={ :error "Updater prepared for RouterOS 7.21" };
-    :if ([/system/resource/get free-hdd-space] < 24000000) do={ :error "Need 24 MB free storage" };
+    :if ([/system/resource/get free-hdd-space] < 32000000) do={ :error "Need 32 MB free storage" };
     :local panel [/container/find where name="shelly-panel"];
     :if ([:len $panel] != 1) do={ :error "Panel container missing" };
     :if ([/container/get $panel interface] != "sp-veth") do={ :error "Unexpected panel interface" };
@@ -74,10 +75,23 @@ $taskInfo = Invoke-PanelJSON '/api/session'
 if ($taskInfo.demo -ne $false) { throw 'Unexpected service. Nothing was changed.' }
 $null = Invoke-PanelJSON '/api/login' $taskOldPassword
 $taskInfo = Invoke-PanelJSON '/api/state'
-if ($taskInfo.resource.'board-name' -ne 'S53UG+5HaxD2HaxD' -or $taskInfo.job.state -eq 'running' -or $taskInfo.recovery) {
+if ($taskInfo.resource.'board-name' -ne 'S53UG+5HaxD2HaxD' -or $taskInfo.job.state -eq 'running' -or $taskInfo.recovery -or $taskInfo.wps) {
     throw 'Wrong board, active operation or pending recovery. Finish that operation first.'
 }
 Write-Host 'Panel idle. Uploading the new image; existing data and original image are kept.'
+$taskProbe = Join-Path $taskPackage 'native-syntax-probe.rsc'
+if ($taskReport.native_script_adapter -and -not (Test-Path -LiteralPath $taskProbe)) {
+    throw 'Native syntax probe missing. Nothing was changed.'
+}
+if (Test-Path -LiteralPath $taskProbe) {
+    & $taskSCP -O @taskOptions $taskProbe 'admin@192.168.89.1:sp-native-syntax.rsc'
+    if ($LASTEXITCODE -ne 0) { throw 'Probe upload failed. Running panel was not changed.' }
+    $taskProbeReply = & $taskSSH @taskOptions admin@192.168.89.1 '/import file-name=sp-native-syntax.rsc'
+    $taskProbeReply | Write-Host
+    if ($LASTEXITCODE -ne 0 -or $taskProbeReply -notcontains 'SP-NATIVE-SYNTAX-OK') {
+        throw 'Native RouterOS syntax was not confirmed. Existing panel and Wi-Fi were not changed.'
+    }
+}
 & $taskSCP -O @taskOptions $taskImage 'admin@192.168.89.1:shelly-panel-update-arm64.tar.gz'
 if ($LASTEXITCODE -ne 0) { throw 'Upload failed. Running panel was not changed.' }
 $taskUpdate = @'
@@ -87,6 +101,10 @@ $taskUpdate = @'
     :local password [/container/envs/find where list="shelly-panel" and key="PANEL_PASSWORD"];
     :if (([:len $panel] != 1) || ([:len $password] != 1)) do={ :error "Panel entries missing" };
     :local oldPassword [/container/envs/get $password value];
+    :local configFile [/file/find where name="shelly-panel/data/config.json"];
+    :local oldConfig [/file/get $configFile contents];
+    :local cfg [:deserialize from=json value=$oldConfig];
+    :if ((($cfg->"expected_board") != "S53UG+5HaxD2HaxD") || (($cfg->"radio_2g") != "wifi2") || (($cfg->"protected_5g") != "wifi1")) do={ :error "Unexpected config; nothing changed" };
     /container/stop $panel;
     :local wait 0;
     :while (([/container/get $panel status] != "stopped") && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
@@ -98,16 +116,34 @@ $taskUpdate = @'
         :while (([/container/get $panel status] != "stopped") && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
         :if ([/container/get $panel status] != "stopped") do={ :error "Extraction did not finish" };
         SP-PASSWORD-COMMAND
+        SP-MANAGEMENT-COMMAND
         /container/start $panel;
         :delay 5s;
         :if ([/container/get $panel status] != "running") do={ :error "Updated panel did not start" };
     } on-error={
         /container/envs/set $password value=$oldPassword;
-        :error "Panel update failed; original password restored. Report this error before continuing";
+        /file/set $configFile contents=$oldConfig;
+        :do {
+            /container/stop $panel;
+            :delay 3s;
+            /container/repull $panel file=shelly-panel-arm64.tar.gz;
+            :delay 3s;
+            :set wait 0;
+            :while (([/container/get $panel status] != "stopped") && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
+            :if ([/container/get $panel status] != "stopped") do={ :error "Rollback extraction timeout" };
+            /container/start $panel;
+        } on-error={ :error "Update and original-image rollback failed; use WinBox container view. Wi-Fi was not changed" };
+        :error "Update failed; original image, config and password were restored. Report this error";
     };
     :put "SP-PANEL-ADMIN-STARTED";
 }
 '@
+if ($EnableManagement) {
+    $taskManagementCommand = ':if ([:len [/file/find where name="shelly-panel/data/config.before-integration.json"]] = 0) do={ /file/add name=shelly-panel/data/config.before-integration.json type=file; /file/set [/file/find where name="shelly-panel/data/config.before-integration.json"] contents=$oldConfig }; :set ($cfg->"allow_changes") true; /file/set $configFile contents=[:serialize $cfg to=json];'
+    $taskUpdate = $taskUpdate.Replace('SP-MANAGEMENT-COMMAND', $taskManagementCommand)
+} else {
+    $taskUpdate = $taskUpdate.Replace('SP-MANAGEMENT-COMMAND', '')
+}
 if ($KeepPassword) {
     $taskUpdate = $taskUpdate.Replace('SP-PASSWORD-COMMAND', '')
 } else {
