@@ -28,6 +28,8 @@ import (
 //go:embed static/index.html static/app.js static/style.css
 var assets embed.FS
 
+const panelVersion = "2026.10.29.2"
+
 type Session struct {
 	CSRF    string
 	Expires time.Time
@@ -207,7 +209,7 @@ func (a *App) get(w http.ResponseWriter, r *http.Request) {
 		if ok {
 			csrf = session.CSRF
 		}
-		reply(w, 200, Row{"authenticated": ok, "csrf": csrf, "demo": a.demo})
+		reply(w, 200, Row{"authenticated": ok, "csrf": csrf, "demo": a.demo, "version": panelVersion})
 		return
 	}
 	if !ok {
@@ -291,6 +293,7 @@ func runMain() error {
 	password := os.Getenv("PANEL_PASSWORD")
 	if *demo {
 		config, router = demoRouter()
+		config.Hosts = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(*port)), net.JoinHostPort("localhost", strconv.Itoa(*port))}
 		password = "demo-local"
 	} else {
 		b, e := os.ReadFile(*configPath)

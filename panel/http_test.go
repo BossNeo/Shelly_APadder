@@ -99,6 +99,28 @@ func TestLoginRateLimit(t *testing.T) {
 	}
 }
 
+func TestHTTPScanRequiresExplicitAcknowledgement(t *testing.T) {
+	s, f := fixture(t)
+	a, err := newApp(s, "test-password", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, origin := "127.0.0.1:8088", "http://127.0.0.1:8088"
+	w := request(a, "POST", "/api/login", host, origin, `{"password":"test-password"}`, "", "")
+	if w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	c := w.Result().Cookies()[0]
+	var login Row
+	_ = json.Unmarshal(w.Body.Bytes(), &login)
+	for _, path := range []string{"/api/scan", "/api/provision"} {
+		w = request(a, "POST", path, host, origin, `{}`, c.Name+"="+c.Value, str(login["csrf"]))
+		if w.Code != 400 || len(f.calls) != 0 {
+			t.Fatal("operation without acknowledgement", path, w.Code)
+		}
+	}
+}
+
 func TestFiveCharacterPanelPassword(t *testing.T) {
 	s, _ := fixture(t)
 	for _, password := range []string{"", "1234"} {

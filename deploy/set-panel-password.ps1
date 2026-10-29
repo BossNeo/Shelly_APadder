@@ -1,7 +1,10 @@
+[CmdletBinding(DefaultParameterSetName = 'Change')]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Change')]
     [ValidatePattern('^[A-Za-z0-9_-]{5,64}$')]
-    [string]$PanelPassword
+    [string]$PanelPassword,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Keep')]
+    [switch]$KeepPassword
 )
 # Run manually in Windows PowerShell. Updates only the existing panel image and
 # its PANEL_PASSWORD. Router credentials, config.json, state and Wi-Fi are kept.
@@ -52,6 +55,7 @@ if ($LASTEXITCODE -ne 0 -or $taskReply -notcontains 'SP-ADMIN-PREFLIGHT-OK') {
 $taskPrivate = @($taskReply | Where-Object { $_ -like 'SP-PRIVATE=*' })
 if ($taskPrivate.Count -ne 1) { throw 'Could not read the panel credential privately.' }
 $taskOldPassword = $taskPrivate[0].Substring(11)
+if ($KeepPassword) { $PanelPassword = $taskOldPassword }
 $taskReply = $null; $taskPrivate = $null
 $taskURL = 'http://192.168.89.1:8088'
 $taskSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -74,7 +78,7 @@ if ($taskInfo.resource.'board-name' -ne 'S53UG+5HaxD2HaxD' -or $taskInfo.job.sta
     throw 'Wrong board, active operation or pending recovery. Finish that operation first.'
 }
 Write-Host 'Panel idle. Uploading the new image; existing data and original image are kept.'
-& $taskSCP -O @taskOptions $taskImage 'admin@192.168.89.1:shelly-panel-admin-arm64.tar.gz'
+& $taskSCP -O @taskOptions $taskImage 'admin@192.168.89.1:shelly-panel-update-arm64.tar.gz'
 if ($LASTEXITCODE -ne 0) { throw 'Upload failed. Running panel was not changed.' }
 $taskUpdate = @'
 {
@@ -88,12 +92,12 @@ $taskUpdate = @'
     :while (([/container/get $panel status] != "stopped") && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
     :if ([/container/get $panel status] != "stopped") do={ :error "Panel did not stop; password unchanged" };
     :do {
-        /container/repull $panel file=shelly-panel-admin-arm64.tar.gz;
+        /container/repull $panel file=shelly-panel-update-arm64.tar.gz;
         :delay 3s;
         :set wait 0;
         :while (([/container/get $panel status] != "stopped") && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
         :if ([/container/get $panel status] != "stopped") do={ :error "Extraction did not finish" };
-        /container/envs/set $password value="SP-NEW-PASSWORD";
+        SP-PASSWORD-COMMAND
         /container/start $panel;
         :delay 5s;
         :if ([/container/get $panel status] != "running") do={ :error "Updated panel did not start" };
@@ -104,7 +108,12 @@ $taskUpdate = @'
     :put "SP-PANEL-ADMIN-STARTED";
 }
 '@
-$taskUpdate = $taskUpdate.Replace('SP-NEW-PASSWORD', $PanelPassword)
+if ($KeepPassword) {
+    $taskUpdate = $taskUpdate.Replace('SP-PASSWORD-COMMAND', '')
+} else {
+    $taskPasswordCommand = '/container/envs/set $password value="' + $PanelPassword + '";'
+    $taskUpdate = $taskUpdate.Replace('SP-PASSWORD-COMMAND', $taskPasswordCommand)
+}
 $taskReply = & $taskSSH @taskOptions admin@192.168.89.1 (Convert-RouterCommand $taskUpdate)
 $taskReply | Write-Host
 if ($LASTEXITCODE -ne 0 -or $taskReply -notcontains 'SP-PANEL-ADMIN-STARTED') {
@@ -112,6 +121,13 @@ if ($LASTEXITCODE -ne 0 -or $taskReply -notcontains 'SP-PANEL-ADMIN-STARTED') {
 }
 $taskSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 $null = Invoke-PanelJSON '/api/login' $PanelPassword
+$taskInfo = Invoke-PanelJSON '/api/session'
+if ($taskReport.panel_version -and $taskInfo.version -ne $taskReport.panel_version) {
+    throw 'Panel version was not confirmed. Report the error before continuing.'
+}
+$taskInfo = Invoke-PanelJSON '/api/state'
+if ($taskInfo.resource.'board-name' -ne 'S53UG+5HaxD2HaxD') { throw 'Updated panel did not confirm Chateau.' }
 $taskOldPassword = $null
-Write-Host 'NEW_PASSWORD_LOGIN_OK'
+Write-Host ('PANEL_VERSION=' + $taskReport.panel_version)
+if ($KeepPassword) { Write-Host 'PANEL_UPDATE_LOGIN_OK' } else { Write-Host 'NEW_PASSWORD_LOGIN_OK' }
 Write-Host 'Open http://192.168.89.1:8088/ and use your selected panel password. SSH/WinBox password is unchanged.'

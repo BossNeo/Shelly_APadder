@@ -92,7 +92,7 @@ func (r *Router) Call(method, path string, body Row) (any, error) {
 	defer res.Body.Close()
 	// Never return RouterOS error bodies: fetch errors may echo Wi-Fi passwords.
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, fmt.Errorf("RouterOS %s %s: HTTP %d", method, strings.Split(path, "/")[0], res.StatusCode)
+		return nil, fmt.Errorf("RouterOS %s %s: HTTP %d", method, path, res.StatusCode)
 	}
 	b, e := io.ReadAll(io.LimitReader(res.Body, 2_000_001))
 	if e != nil || len(b) > 2_000_000 {
@@ -145,7 +145,10 @@ func (r *Router) Rows(path string, params Row) ([]Row, error) {
 	return rowsOf(v)
 }
 func (r *Router) Patch(path, id string, data Row) error {
-	_, e := r.Call("PATCH", path+"/"+url.PathEscape(id), data)
+	if id == "" {
+		return errors.New("Липсва RouterOS ID за промяна")
+	}
+	_, e := r.Call("PATCH", recordPath(path, id), data)
 	return e
 }
 func (r *Router) Add(path string, data Row) (Row, error) {
@@ -160,8 +163,20 @@ func (r *Router) Add(path string, data Row) (Row, error) {
 	return m, nil
 }
 func (r *Router) Remove(path, id string) error {
-	_, e := r.Call("DELETE", path+"/"+url.PathEscape(id), nil)
+	if id == "" {
+		return errors.New("Липсва RouterOS ID за премахване")
+	}
+	_, e := r.Call("DELETE", recordPath(path, id), nil)
 	return e
+}
+
+func recordPath(path, id string) string {
+	// RouterOS does not decode %2A in internal record IDs. Escape the rest of
+	// the segment normally so names cannot inject a path or query string.
+	if strings.HasPrefix(id, "*") {
+		return path + "/*" + url.PathEscape(id[1:])
+	}
+	return path + "/" + url.PathEscape(id)
 }
 func (r *Router) RPC(address, method string, params Row) (Row, error) {
 	ip := net.ParseIP(address)

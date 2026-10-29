@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import struct
@@ -94,7 +95,10 @@ def main():
         assert hashlib.sha256(read_config).hexdigest() == config_id
         assert "sha256:" + hashlib.sha256(read_layer).hexdigest() == json.loads(read_config)["rootfs"]["diff_ids"][0]
     unpacked = sum(len(data) for data, _ in files.values())
-    report = {"architecture": "linux/arm64", "static_elf_verified": True,
+    version = re.search(r'const panelVersion = "([^"]+)"', (ROOT / "panel/main.go").read_text(encoding="utf-8"))
+    if not version:
+        raise RuntimeError("Panel version missing")
+    report = {"architecture": "linux/arm64", "static_elf_verified": True, "panel_version": version.group(1),
               "binary_bytes": len(executable), "unpacked_file_bytes": unpacked,
               "archive_bytes": image.stat().st_size,
               "minimum_free_bytes_estimate": 3 * unpacked + image.stat().st_size + 32 * 1024**2,
@@ -110,6 +114,7 @@ def main():
                            ("deploy/upload-chateau.ps1", "upload-chateau.ps1"),
                            ("deploy/enable-chateau.ps1", "enable-chateau.ps1"),
                            ("deploy/set-panel-password.ps1", "set-panel-password.ps1"),
+                           ("deploy/update-chateau.ps1", "update-chateau.ps1"),
                            ("docs/INSTALL.bg.md", "INSTALL.bg.md")):
         shutil.copyfile(ROOT / source, out / target)
     print(json.dumps(report, indent=2))

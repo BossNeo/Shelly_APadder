@@ -250,7 +250,7 @@ func (s *Service) overview() (Row, error) {
 	}
 	nets := []Row{}
 	for _, r := range rows {
-		nets = append(nets, Row{"name": r["name"], "ssid": str(r["configuration.ssid"]), "band": str(r["channel.band"]), "enabled": active(r), "protected": str(r["name"]) == s.config.Protected5G, "managed": s.managed(r, radio)})
+		nets = append(nets, Row{"name": r["name"], "ssid": str(r["configuration.ssid"]), "band": str(r["channel.band"]), "enabled": active(r), "virtual": str(r["master-interface"]) != "", "protected": str(r["name"]) == s.config.Protected5G, "managed": s.managed(r, radio)})
 	}
 	data := s.store.read()
 	projects := []Row{}
@@ -363,21 +363,51 @@ func (s *Service) switchNetworks(names []string, on bool) (Row, error) {
 	})
 	changed := []Row{}
 	for _, v := range targets {
+		if active(v) == on {
+			continue
+		}
 		changed = append(changed, v)
 		if e = s.router.Patch(wifi, str(v[".id"]), Row{"disabled": !on}); e != nil {
-			failed := false
-			for i := len(changed) - 1; i >= 0; i-- {
-				if s.router.Patch(wifi, str(changed[i][".id"]), Row{"disabled": flag(changed[i]["disabled"])}) != nil {
-					failed = true
-				}
-			}
-			if failed {
-				return nil, errors.New("Непълно връщане на мрежите: провери състоянията в WebFig")
-			}
-			return nil, e
+			return nil, s.toggleFailure(str(v["name"]), e, changed)
 		}
 	}
-	return Row{"changed": len(targets)}, nil
+	wanted := []Row{}
+	for _, v := range targets {
+		wanted = append(wanted, Row{"name": v["name"], "disabled": !on})
+	}
+	if e = s.verifyNetworkStates(wanted); e != nil {
+		return nil, s.toggleFailure("работните мрежи", e, changed)
+	}
+	return Row{"changed": len(changed)}, nil
+}
+
+func (s *Service) verifyNetworkStates(wanted []Row) error {
+	rows, e := s.router.Rows(wifi, Row{"detail": ""})
+	if e != nil {
+		return e
+	}
+	for _, v := range wanted {
+		actual := byName(rows, str(v["name"]))
+		if actual == nil || active(actual) != active(v) {
+			return fmt.Errorf("RouterOS не потвърди състоянието на %s", str(v["name"]))
+		}
+	}
+	return nil
+}
+
+func (s *Service) toggleFailure(name string, cause error, before []Row) error {
+	// The failed request may have changed nothing, or it may have been applied
+	// before its reply was lost. Read back before deciding rollback is needed.
+	if s.verifyNetworkStates(before) == nil {
+		return fmt.Errorf("Промяната на %s не успя: %w. Предишните състояния са запазени.", name, cause)
+	}
+	for i := len(before) - 1; i >= 0; i-- {
+		_ = s.router.Patch(wifi, str(before[i][".id"]), Row{"disabled": flag(before[i]["disabled"])})
+	}
+	if e := s.verifyNetworkStates(before); e != nil {
+		return fmt.Errorf("Промяната на %s не успя: %w. Връщането не е потвърдено: %v", name, cause, e)
+	}
+	return fmt.Errorf("Промяната на %s не успя: %w. Предишните състояния са възстановени.", name, cause)
 }
 
 func recoveryScript(snap *Recovery) string {
@@ -703,7 +733,8 @@ func (s *Service) start(kind string, body Row) (Row, error) {
 	if e := s.writable(); e != nil {
 		return nil, e
 	}
-	if _, _, _, e := s.topology(); e != nil {
+	rows, radio, _, e := s.topology()
+	if e != nil {
 		return nil, e
 	}
 	var project Project
@@ -729,6 +760,13 @@ func (s *Service) start(kind string, body Row) (Row, error) {
 		}
 		if project.ID == "" || len(devices) == 0 || len(unique) != len(requested) || len(devices) != len(unique) {
 			return nil, errors.New("Избери обект и устройства от последното сканиране")
+		}
+		target := byName(rows, project.Interface)
+		if target == nil || !s.managed(target, radio) || !active(target) || !active(radio) || str(radio["configuration.mode"]) != "ap" {
+			return nil, errors.New("Първо включи целевата мрежа и физическото 2.4 GHz радио в AP режим")
+		}
+		if str(target["configuration.ssid"]) != project.SSID {
+			return nil, errors.New("SSID е променен извън панела: обнови профила")
 		}
 	}
 	s.cancel.Store(false)

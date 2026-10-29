@@ -37,16 +37,18 @@
     </section>
     <section id="onboard" class="card onboard"><div class="section-title"><div><span class="eyebrow">ПОДГОТОВКА НА УСТРОЙСТВА</span><h2>От кутията към мрежата.</h2><p>Открий фабричните Shelly AP и избери кои да добавиш към обекта.</p></div><span class="line-art">⌁</span></div>
       <div class="onboard-controls"><label>Мрежа на обекта<select id="target"><option value="">Избери обект…</option></select></label><button id="scan" class="secondary">⌕ &nbsp; Сканирай за Shelly</button></div>
-      <label class="check warning-check"><input id="ack" type="checkbox"><span>Работя през 5 GHz или кабел. Разбирам, че 2.4 GHz мрежите временно ще прекъснат при сканиране и добавяне.</span></label>
+      <p class="hint">1. Сканирай за фабрични Shelly устройства. 2. Маркирай устройствата. 3. Избери включена мрежа на обекта и ги свържи към нея. Преди всяка операция ще поискаме потвърждение за временната пауза на 2.4 GHz.</p>
       <div id="devices" class="devices"><p class="empty">Все още няма открити устройства.<br><span>Включи Shelly устройствата във фабричен AP режим и стартирай сканиране.</span></p></div>
       <div class="options"><label class="check"><input id="rename" type="checkbox" checked>Име на обекта + пореден номер</label><label class="check"><input id="disable-ap" type="checkbox" checked>Изключи Shelly AP след потвърдено свързване</label></div>
-      <div class="job-strip"><div><span class="online-dot"></span><span id="job-message" role="status">Готов за работа</span></div><div><button id="stop" class="quiet" hidden>Спри след безопасно възстановяване</button><button id="provision" class="primary">Добави избраните →</button></div></div>
+      <div class="job-strip"><div><span class="online-dot"></span><span id="job-message" role="status">Готов за работа</span></div><div><button id="stop" class="quiet" hidden>Спри след безопасно възстановяване</button><button id="provision" class="primary" disabled>Свържи избраните към обекта (0)</button></div></div>
+      <p id="provision-help" class="hint" role="status">Първо сканирай за Shelly устройства.</p>
       <div id="results"></div><p class="hint">Shelly Gen2+ • DHCP • Без автоматично включване на облака. При непотвърдено свързване AP остава достъпен.</p>
     </section>
     <section id="history" class="section-block"><div class="section-title"><div><h2>Последни операции</h2><p>Резултатите се пазят локално на станцията.</p></div><span class="badge neutral">ЛОКАЛЕН ЖУРНАЛ</span></div><div id="history-list" class="card history-list"></div></section>
-    <footer><span id="router-detail">RouterOS</span><span>Локално. Под твой контрол.</span></footer>
+    <footer><span id="router-detail">RouterOS</span><span id="panel-version">Локално. Под твой контрол.</span></footer>
   </div>
 </main>
+<dialog id="operation-dialog" aria-labelledby="operation-title" aria-describedby="operation-detail operation-access"><form method="dialog"><h2 id="operation-title">Потвърди операцията</h2><p id="operation-detail"></p><p id="operation-access"></p><p>2.4 GHz мрежите временно ще прекъснат. След операцията панелът ще възстанови настройките им.</p><div class="dialog-actions"><button class="secondary" value="cancel" autofocus>Отказ</button><button id="confirm-operation" class="primary" value="confirm">Използвам 5 GHz или кабел — продължи</button></div></form></dialog>
 <dialog id="project-dialog"><form id="project-form"><div class="section-title"><h2>Нов обект</h2><button type="button" id="close-dialog" class="quiet" aria-label="Затвори">✕</button></div><p>Създай Wi-Fi мрежа или запази профил за съществуваща разрешена мрежа.</p><label>Мрежа<select id="existing"><option value="">Създай нова Wi-Fi мрежа</option></select></label><label>Име на обекта<input name="title" maxlength="80" required placeholder="Например: Апартамент — София"></label><label>Wi-Fi име (SSID)<input name="ssid" required placeholder="Project-Sofia" maxlength="32"></label><label>Wi-Fi парола<input name="password" type="password" required minlength="8" maxlength="63" autocomplete="new-password"></label><p class="hint">Новата мрежа се създава изключена. За съществуваща мрежа въведи настоящата ѝ парола.</p><button type="submit" class="primary">Запази обекта</button></form></dialog>
 <div id="toast" class="toast" role="alert" hidden></div>
 </body></html>
