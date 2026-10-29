@@ -392,7 +392,10 @@ func (s *Service) nativeDevice(o ScriptOptions, device Row, index, ipNumber int,
 	})
 }
 func (s *Service) scriptScan(seconds int) error {
-	s.message(fmt.Sprintf("Сканиране %d сек. · 2.4 GHz временно се използва за Shelly", seconds))
+	return s.scanNetworks(seconds, true)
+}
+func (s *Service) scanNetworks(seconds int, shellyOnly bool) error {
+	s.message(fmt.Sprintf("Сканиране %d сек. · временна пауза на 2.4 GHz", seconds))
 	found := map[string]Row{}
 	e := s.station(func(r Row) error {
 		v, e := s.router.Call("POST", wifi+"/scan", Row{".id": r[".id"], "duration": fmt.Sprint(seconds, "s")})
@@ -406,12 +409,17 @@ func (s *Service) scriptScan(seconds int) error {
 		for _, row := range rows {
 			ssid := str(row["ssid"])
 			security := strings.ToLower(str(row["security"]))
-			if shellySSID.MatchString(ssid) && (security == "none" || security == "open" || security == "") {
+			if ssid != "" && (!shellyOnly || (shellySSID.MatchString(ssid) && (security == "none" || security == "open" || security == ""))) {
 				signal := row["signal"]
 				if signal == nil {
 					signal = row["signal-strength"]
 				}
-				found[ssid] = Row{"ssid": ssid, "signal": str(signal)}
+				previous, exists := found[ssid]
+				oldSignal, oldError := strconv.Atoi(str(previous["signal"]))
+				newSignal, newError := strconv.Atoi(str(signal))
+				if !exists || (newError == nil && (oldError != nil || newSignal > oldSignal)) {
+					found[ssid] = Row{"ssid": ssid, "signal": str(signal), "security": security}
+				}
 			}
 		}
 		return nil
@@ -427,12 +435,17 @@ func (s *Service) scriptScan(seconds int) error {
 	s.status.Lock()
 	s.job.Found = list
 	s.status.Unlock()
-	s.event("ok", fmt.Sprintf("Намерени отворени Shelly AP мрежи: %d", len(list)))
+	label := "Намерени Wi-Fi мрежи на 2.4 GHz"
+	if shellyOnly {
+		label = "Намерени отворени Shelly AP мрежи"
+	}
+	s.event("ok", fmt.Sprintf("%s: %d", label, len(list)))
 	return nil
 }
 func (s *Service) startScript(body Row) (Row, error) {
 	o, e := options(body)
 	scanOnly := body["scan_only"] == true
+	networkScan := scanOnly && body["networks_only"] == true
 	if scanOnly {
 		o.SSID = "scan"
 		o.Password = "scan-only"
@@ -470,13 +483,28 @@ func (s *Service) startScript(body Row) (Row, error) {
 	if scanOnly {
 		kind, message = "scan", "Сканиране за Shelly без настройване на устройства"
 	}
+	if networkScan {
+		kind, message = "networks", "Сканиране за Wi-Fi имена на 2.4 GHz"
+	}
 	s.job = Job{State: "running", Kind: kind, Message: message, Found: []Row{}, Results: []Row{}}
 	s.status.Unlock()
-	s.event("info", "Начало: TheScript · постоянният 5 GHz достъп се запазва")
+	s.event("info", message+" · постоянният 5 GHz достъп се запазва")
 	ok = true
 	go func() {
 		defer s.gate.Unlock()
 		var err error
+		if networkScan {
+			if s.demo {
+				s.sleep(time.Second)
+				s.status.Lock()
+				s.job.Found = []Row{{"ssid": "Object WiFi", "signal": "-45", "security": "wpa2-psk"}, {"ssid": "Guest 2.4G", "signal": "-62", "security": "wpa2-psk"}}
+				s.status.Unlock()
+			} else {
+				err = s.scanNetworks(o.Seconds, false)
+			}
+			s.finishScript(err)
+			return
+		}
 		if s.demo {
 			s.runScriptDemo(o, scanOnly)
 			return
@@ -538,6 +566,8 @@ func (s *Service) finishScript(e error) {
 	} else {
 		if job := s.jobView(); job.Kind == "scan" {
 			message = fmt.Sprintf("Намерени отворени Shelly AP мрежи: %d. Няма настройвани устройства. Мрежите са възстановени.", len(job.Found))
+		} else if job.Kind == "networks" {
+			message = fmt.Sprintf("Намерени Wi-Fi мрежи на 2.4 GHz: %d. Избери SSID и въведи паролата ръчно. Мрежите са възстановени.", len(job.Found))
 		}
 		for _, r := range s.jobView().Results {
 			if r["state"] == "error" {

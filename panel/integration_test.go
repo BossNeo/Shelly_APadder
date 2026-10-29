@@ -151,7 +151,7 @@ func TestScriptHTTPRequiresLoginAndExplicitAcknowledgement(t *testing.T) {
 	}
 	host := "127.0.0.1:8088"
 	origin := "http://" + host
-	for _, path := range []string{"/api/script", "/api/password", "/api/wps", "/api/probe"} {
+	for _, path := range []string{"/api/script", "/api/wifi-scan", "/api/password", "/api/wps", "/api/probe"} {
 		if w := request(a, "POST", path, host, origin, `{}`, "", ""); w.Code != 401 {
 			t.Fatal(path, w.Code)
 		}
@@ -165,6 +165,9 @@ func TestScriptHTTPRequiresLoginAndExplicitAcknowledgement(t *testing.T) {
 	cookie := w.Result().Cookies()[0].String()
 	if w = request(a, "POST", "/api/script", host, origin, `{"scan_only":true,"scan_seconds":15}`, cookie, str(login["csrf"])); w.Code != 400 {
 		t.Fatal("Missing 5GHz/LAN acknowledgement accepted", w.Code)
+	}
+	if w = request(a, "POST", "/api/wifi-scan", host, origin, `{"scan_seconds":15}`, cookie, str(login["csrf"])); w.Code != 400 {
+		t.Fatal("Wi-Fi scan accepted without acknowledgement", w.Code)
 	}
 }
 
@@ -285,6 +288,44 @@ func TestScanOnlyNeedsNoTargetAndDoesNotConfigureDevices(t *testing.T) {
 		if strings.HasPrefix(str(c.body["script"]), ":global SP") {
 			t.Fatal("Native provisioning worker launched during scan")
 		}
+	}
+}
+func TestWiFiSSIDScanIncludesProtectedNetworksWithoutJoiningThem(t *testing.T) {
+	for _, failRecovery := range []bool{false, true} {
+		s, f := fixture(t)
+		before := clone(f.tables[wifi])
+		f.failRecovery = failRecovery
+		f.scanRows = []Row{
+			{"ssid": "Object WiFi", "security": "WPA2", "signal": "-70"},
+			{"ssid": "Object WiFi", "security": "WPA2", "signal": "-40"},
+			{"ssid": "Guest", "security": "None", "signal-strength": "-60"},
+			{"ssid": "", "security": "WPA2", "signal": "-30"},
+		}
+		if _, e := s.startScript(Row{"scan_only": true, "networks_only": true, "scan_seconds": 15}); e != nil {
+			t.Fatal(e)
+		}
+		until := time.Now().Add(2 * time.Second)
+		for s.jobView().State == "running" && time.Now().Before(until) {
+			time.Sleep(time.Millisecond)
+		}
+		s.gate.Lock()
+		job := s.jobView()
+		if failRecovery {
+			if job.State != "error" || len(job.Found) != 0 || s.store.read().Recovery == nil {
+				t.Fatal("Failed recovery claimed a completed scan", job)
+			}
+		} else if job.State != "done" || job.Kind != "networks" || len(job.Found) != 2 || str(job.Found[1]["ssid"]) != "Object WiFi" || str(job.Found[1]["signal"]) != "-40" || !reflect.DeepEqual(before, f.tables[wifi]) || s.store.read().Recovery != nil {
+			t.Fatal(job)
+		}
+		if len(f.rpcCalls) != 0 || len(job.Results) != 0 || len(s.store.read().History) != 0 {
+			t.Fatal("SSID scan configured devices")
+		}
+		for _, c := range f.calls {
+			if c.path == "execute" && strings.Contains(str(c.body["script"]), rosString("Object WiFi")) {
+				t.Fatal("SSID scan attempted a target connection")
+			}
+		}
+		s.gate.Unlock()
 	}
 }
 func TestWPSSensitiveReadDoesNotAllowManagement(t *testing.T) {

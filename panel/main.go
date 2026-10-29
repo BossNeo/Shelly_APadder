@@ -28,7 +28,7 @@ import (
 //go:embed static/index.html static/app.js static/style.css static/brand/*
 var assets embed.FS
 
-const panelVersion = "2026.10.29.5"
+const panelVersion = "2026.10.29.6"
 
 type Session struct {
 	CSRF    string
@@ -165,6 +165,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			e = errors.New("Потвърди използването на 5 GHz или LAN и временната пауза на 2.4 GHz")
 		} else {
 			out, e = a.service.startScript(body)
+		}
+	case "/api/wifi-scan":
+		if body["acknowledge_disconnect"] != true {
+			e = errors.New("Потвърди използването на 5 GHz или LAN и временната пауза на 2.4 GHz")
+		} else {
+			out, e = a.service.startScript(Row{"scan_only": true, "networks_only": true, "scan_seconds": body["scan_seconds"]})
 		}
 	case "/api/switch":
 		var names []string
