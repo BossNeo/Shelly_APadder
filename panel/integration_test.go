@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,41 @@ func TestExternalTargetAcceptedWithoutLocalProjectOrEnabledSSID(t *testing.T) {
 	}
 	if s.jobView().State != "done" || len(s.jobView().Results) != 3 {
 		t.Fatal(s.jobView())
+	}
+}
+func TestScanOnlyNeedsNoTargetAndDoesNotConfigureDevices(t *testing.T) {
+	s, f := fixture(t)
+	before := make([]Row, len(f.tables[wifi]))
+	for i, row := range f.tables[wifi] {
+		before[i] = clone(row)
+	}
+	f.scanRows = []Row{
+		{"ssid": "ShellyPlus1-441793ABCD01", "security": "None", "signal": "-50"},
+		{"ssid": "ShellyPlus1-441793ABCD01", "security": "None", "signal": "-51"},
+		{"ssid": "Shelly1MiniG3-543204ABCD02", "security": "Open", "signal": "-60"},
+		{"ssid": "ShellyPlus1-441793ABCD03", "security": "WPA2"},
+		{"ssid": "Other-SSID", "security": "None"},
+	}
+	if _, e := s.startScript(Row{"scan_only": true, "scan_seconds": 15}); e != nil {
+		t.Fatal("Scan required target credentials", e)
+	}
+	until := time.Now().Add(2 * time.Second)
+	for s.jobView().State == "running" && time.Now().Before(until) {
+		time.Sleep(time.Millisecond)
+	}
+	s.gate.Lock()
+	defer s.gate.Unlock()
+	job := s.jobView()
+	if job.State != "done" || job.Kind != "scan" || len(job.Found) != 2 || len(job.Results) != 0 || !strings.Contains(job.Message, ": 2.") {
+		t.Fatal(job)
+	}
+	if len(f.rpcCalls) != 0 || len(s.store.read().History) != 0 || s.store.read().Recovery != nil || !reflect.DeepEqual(before, f.tables[wifi]) {
+		t.Fatal("Scan configured a device or did not restore Wi-Fi")
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(str(c.body["script"]), ":global SP") {
+			t.Fatal("Native provisioning worker launched during scan")
+		}
 	}
 }
 func TestWPSSensitiveReadDoesNotAllowManagement(t *testing.T) {

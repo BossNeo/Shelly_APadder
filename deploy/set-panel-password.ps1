@@ -5,7 +5,8 @@ param(
     [string]$PanelPassword,
     [Parameter(Mandatory = $true, ParameterSetName = 'Keep')]
     [switch]$KeepPassword,
-    [switch]$EnableManagement
+    [switch]$EnableManagement,
+    [switch]$ResumeStoppedPanel
 )
 # Run manually in Windows PowerShell. Updates only the existing panel image and
 # its PANEL_PASSWORD. Router credentials, config.json, state and Wi-Fi are kept.
@@ -32,15 +33,17 @@ function Convert-RouterCommand([string]$Code) {
 $taskPreflight = @'
 {
     :if ([/system/resource/get board-name] != "S53UG+5HaxD2HaxD") do={ :error "Wrong router" };
-    :if ([/system/resource/get version] !~ "^7.21") do={ :error "Updater prepared for RouterOS 7.21" };
+    :local rosVersion [/system/resource/get version];
+    :if (($rosVersion != "7.21") && ([:pick $rosVersion 0 5] != "7.21.")) do={ :error "Updater prepared for RouterOS 7.21" };
     :if ([/system/resource/get free-hdd-space] < 32000000) do={ :error "Need 32 MB free storage" };
     :local panel [/container/find where name="shelly-panel"];
     :if ([:len $panel] != 1) do={ :error "Panel container missing" };
     :if ([/container/get $panel interface] != "sp-veth") do={ :error "Unexpected panel interface" };
-    :if ([/container/get $panel root-dir] != "shelly-panel/root") do={ :error "Unexpected root directory" };
-    :if ([:len [/container/mounts/find where list="shelly-panel-data" and src="shelly-panel/data" and dst="/data"]] != 1) do={ :error "Persistent data mount missing" };
-    :if ([:len [/file/find where name="shelly-panel/data/config.json"]] != 1) do={ :error "Panel config missing" };
-    :if ([:len [/file/find where name="shelly-panel-arm64.tar.gz"]] != 1) do={ :error "Original image needed for rollback" };
+    :local panelRoot [/container/get $panel root-dir];
+    :if (($panelRoot != "shelly-panel/root") && ($panelRoot != "/shelly-panel/root")) do={ :error "Unexpected root directory" };
+    :if ([:len [/container/mounts/find where list="shelly-panel-data" and (src="shelly-panel/data" or src="/shelly-panel/data") and dst="/data"]] != 1) do={ :error "Persistent data mount missing" };
+    :if ([:len [/file/find where name="shelly-panel/data/config.json" or name="/shelly-panel/data/config.json"]] != 1) do={ :error "Panel config missing" };
+    :if ([:len [/file/find where name="shelly-panel-arm64.tar.gz" or name="/shelly-panel-arm64.tar.gz"]] != 1) do={ :error "Original image needed for rollback" };
     :local password [/container/envs/find where list="shelly-panel" and key="PANEL_PASSWORD"];
     :if ([:len $password] != 1) do={ :error "Panel password entry missing" };
     :put "SP-ADMIN-PREFLIGHT-OK";
@@ -58,6 +61,34 @@ if ($taskPrivate.Count -ne 1) { throw 'Could not read the panel credential priva
 $taskOldPassword = $taskPrivate[0].Substring(11)
 if ($KeepPassword) { $PanelPassword = $taskOldPassword }
 $taskReply = $null; $taskPrivate = $null
+if ($ResumeStoppedPanel) {
+    # Only for the interrupted update which stopped before its first repull.
+    # Start the existing image, then perform the normal HTTP idle/recovery checks.
+    $taskResume = @'
+{
+    :if ([/system/resource/get board-name] != "S53UG+5HaxD2HaxD") do={ :error "Wrong router" };
+    :local panel [/container/find where name="shelly-panel"];
+    :if ([:len $panel] != 1) do={ :error "Panel container missing" };
+    :if ([/container/get $panel interface] != "sp-veth") do={ :error "Unexpected panel interface" };
+    :local root [/container/get $panel root-dir];
+    :if (($root != "shelly-panel/root") && ($root != "/shelly-panel/root")) do={ :error "Unexpected root directory" };
+    :if ([:len [/container/find where name="shelly-panel" and stopped]] = 1) do={
+        :put "SP-RESUMING-EXISTING-PANEL";
+        /container/start $panel;
+    };
+    :local wait 0;
+    :while (([:len [/container/find where name="shelly-panel" and running]] != 1) && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
+    :if ([:len [/container/find where name="shelly-panel" and running]] != 1) do={ :error "Existing panel did not start; report container flags" };
+    :put "SP-EXISTING-PANEL-RUNNING";
+}
+'@
+    $taskResumeReply = @(& $taskSSH @taskOptions admin@192.168.89.1 (Convert-RouterCommand $taskResume))
+    $taskResumeReply | Write-Host
+    if ($LASTEXITCODE -ne 0 -or $taskResumeReply -notcontains 'SP-EXISTING-PANEL-RUNNING') {
+        throw 'Existing panel could not be resumed. No image was replaced.'
+    }
+    Start-Sleep -Seconds 3
+}
 $taskURL = 'http://192.168.89.1:8088'
 $taskSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 function Invoke-PanelJSON([string]$Path, [string]$Password = '') {
@@ -101,45 +132,60 @@ $taskUpdate = @'
     :local password [/container/envs/find where list="shelly-panel" and key="PANEL_PASSWORD"];
     :if (([:len $panel] != 1) || ([:len $password] != 1)) do={ :error "Panel entries missing" };
     :local oldPassword [/container/envs/get $password value];
-    :local configFile [/file/find where name="shelly-panel/data/config.json"];
+    :local configFile [/file/find where name="shelly-panel/data/config.json" or name="/shelly-panel/data/config.json"];
+    :if ([:len $configFile] != 1) do={ :error "Panel config missing; nothing changed" };
     :local oldConfig [/file/get $configFile contents];
     :local cfg [:deserialize from=json value=$oldConfig];
     :if ((($cfg->"expected_board") != "S53UG+5HaxD2HaxD") || (($cfg->"radio_2g") != "wifi2") || (($cfg->"protected_5g") != "wifi1")) do={ :error "Unexpected config; nothing changed" };
-    /container/stop $panel;
     :local wait 0;
-    :while (([/container/get $panel status] != "stopped") && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
-    :if ([/container/get $panel status] != "stopped") do={ :error "Panel did not stop; password unchanged" };
+    :local replacementAttempted false;
     :do {
+        :put "SP-UPDATE-STOPPING";
+        /container/stop $panel;
+        :while (([:len [/container/find where name="shelly-panel" and stopped]] != 1) && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
+        :if ([:len [/container/find where name="shelly-panel" and stopped]] != 1) do={ :error "Panel did not stop; password unchanged" };
+        :put "SP-UPDATE-EXTRACTING";
+        :set replacementAttempted true;
         /container/repull $panel file=shelly-panel-update-arm64.tar.gz;
         :delay 3s;
         :set wait 0;
-        :while (([/container/get $panel status] != "stopped") && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
-        :if ([/container/get $panel status] != "stopped") do={ :error "Extraction did not finish" };
+        :while (([:len [/container/find where name="shelly-panel" and stopped]] != 1) && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
+        :if ([:len [/container/find where name="shelly-panel" and stopped]] != 1) do={ :error "Extraction did not finish" };
         SP-PASSWORD-COMMAND
         SP-MANAGEMENT-COMMAND
+        :put "SP-UPDATE-STARTING";
         /container/start $panel;
-        :delay 5s;
-        :if ([/container/get $panel status] != "running") do={ :error "Updated panel did not start" };
+        :set wait 0;
+        :while (([:len [/container/find where name="shelly-panel" and running]] != 1) && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
+        :if ([:len [/container/find where name="shelly-panel" and running]] != 1) do={ :error "Updated panel did not start" };
     } on-error={
         /container/envs/set $password value=$oldPassword;
         /file/set $configFile contents=$oldConfig;
         :do {
-            /container/stop $panel;
-            :delay 3s;
-            /container/repull $panel file=shelly-panel-arm64.tar.gz;
-            :delay 3s;
+            :if ($replacementAttempted) do={
+                :if ([:len [/container/find where name="shelly-panel" and stopped]] != 1) do={ /container/stop $panel };
+                :set wait 0;
+                :while (([:len [/container/find where name="shelly-panel" and stopped]] != 1) && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
+                :if ([:len [/container/find where name="shelly-panel" and stopped]] != 1) do={ :error "Rollback stop timeout" };
+                /container/repull $panel file=shelly-panel-arm64.tar.gz;
+                :delay 3s;
+                :set wait 0;
+                :while (([:len [/container/find where name="shelly-panel" and stopped]] != 1) && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
+                :if ([:len [/container/find where name="shelly-panel" and stopped]] != 1) do={ :error "Rollback extraction timeout" };
+            };
+            :if ([:len [/container/find where name="shelly-panel" and stopped]] = 1) do={ /container/start $panel };
             :set wait 0;
-            :while (([/container/get $panel status] != "stopped") && ($wait < 120)) do={ :delay 1s; :set wait ($wait + 1) };
-            :if ([/container/get $panel status] != "stopped") do={ :error "Rollback extraction timeout" };
-            /container/start $panel;
+            :while (([:len [/container/find where name="shelly-panel" and running]] != 1) && ($wait < 30)) do={ :delay 1s; :set wait ($wait + 1) };
+            :if ([:len [/container/find where name="shelly-panel" and running]] != 1) do={ :error "Rollback start timeout" };
         } on-error={ :error "Update and original-image rollback failed; use WinBox container view. Wi-Fi was not changed" };
-        :error "Update failed; original image, config and password were restored. Report this error";
+        :if ($replacementAttempted) do={ :error "Update failed; original image, config and password were restored. Report this error" };
+        :error "Update failed before image replacement; existing panel resumed. Report this error";
     };
     :put "SP-PANEL-ADMIN-STARTED";
 }
 '@
 if ($EnableManagement) {
-    $taskManagementCommand = ':if ([:len [/file/find where name="shelly-panel/data/config.before-integration.json"]] = 0) do={ /file/add name=shelly-panel/data/config.before-integration.json type=file; /file/set [/file/find where name="shelly-panel/data/config.before-integration.json"] contents=$oldConfig }; :set ($cfg->"allow_changes") true; /file/set $configFile contents=[:serialize to=json value=$cfg];'
+    $taskManagementCommand = ':if ([:len [/file/find where name="shelly-panel/data/config.before-integration.json" or name="/shelly-panel/data/config.before-integration.json"]] = 0) do={ /file/add name=shelly-panel/data/config.before-integration.json type=file; /file/set [/file/find where name="shelly-panel/data/config.before-integration.json" or name="/shelly-panel/data/config.before-integration.json"] contents=$oldConfig }; :set ($cfg->"allow_changes") true; /file/set $configFile contents=[:serialize to=json value=$cfg];'
     $taskUpdate = $taskUpdate.Replace('SP-MANAGEMENT-COMMAND', $taskManagementCommand)
 } else {
     $taskUpdate = $taskUpdate.Replace('SP-MANAGEMENT-COMMAND', '')

@@ -125,6 +125,8 @@ def main():
                            ("deploy/enable-chateau.ps1", "enable-chateau.ps1"),
                            ("deploy/set-panel-password.ps1", "set-panel-password.ps1"),
                            ("deploy/update-chateau.ps1", "update-chateau.ps1"),
+                           ("deploy/check-chateau-update.ps1", "check-chateau-update.ps1"),
+                           ("deploy/reset-panel-login.ps1", "reset-panel-login.ps1"),
                            ("docs/INSTALL.bg.md", "INSTALL.bg.md"),
                            ("docs/INTEGRATION.bg.md", "INTEGRATION.bg.md")):
         shutil.copyfile(ROOT / source, out / target)

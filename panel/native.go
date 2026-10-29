@@ -466,7 +466,11 @@ func (s *Service) startScript(body Row) (Row, error) {
 	}
 	s.cancel.Store(false)
 	s.status.Lock()
-	s.job = Job{State: "running", Kind: "script", Message: "Подготовка на TheScript", Found: []Row{}, Results: []Row{}}
+	kind, message := "script", "Подготовка на TheScript"
+	if scanOnly {
+		kind, message = "scan", "Сканиране за Shelly без настройване на устройства"
+	}
+	s.job = Job{State: "running", Kind: kind, Message: message, Found: []Row{}, Results: []Row{}}
 	s.status.Unlock()
 	s.event("info", "Начало: TheScript · постоянният 5 GHz достъп се запазва")
 	ok = true
@@ -532,6 +536,9 @@ func (s *Service) finishScript(e error) {
 		state = "cancelled"
 		message = "Операцията е спряна и мрежите са възстановени."
 	} else {
+		if job := s.jobView(); job.Kind == "scan" {
+			message = fmt.Sprintf("Намерени отворени Shelly AP мрежи: %d. Няма настройвани устройства. Мрежите са възстановени.", len(job.Found))
+		}
 		for _, r := range s.jobView().Results {
 			if r["state"] == "error" {
 				state = "error"
