@@ -18,7 +18,7 @@
     :if ([:len [/container/envs/find where list="shelly-panel"]] > 0) do={ :error "Environment already exists; stop" };
     :local routerPass [:rndstr length=32];
     :local panelPass [:rndstr length=24];
-    /user/group/add name=sp-panel policy=read,write,test,sensitive,rest-api;
+    /user/group/add name=sp-panel policy=read,write,test,sensitive,api,rest-api;
     /user/add name=shelly-panel group=sp-panel address=172.31.253.2/32 password=$routerPass comment="shelly-panel container only";
     /container/envs/add list=shelly-panel key=ROUTER_URL value="http://172.31.253.1";
     /container/envs/add list=shelly-panel key=ROUTER_USER value="shelly-panel";
