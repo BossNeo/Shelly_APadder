@@ -103,6 +103,8 @@ def main():
     (out / "image-size.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     (out / "SHA256SUMS.txt").write_text(report["sha256"] + "  " + image.name + "\n", encoding="ascii")
     for source, target in (("deploy/config.example.json", "config.json"),
+                           ("deploy/chateau-network.rsc", "chateau-network.rsc"),
+                           ("deploy/chateau-install.rsc", "chateau-install.rsc"),
                            ("deploy/routeros-network.rsc.example", "routeros-network.rsc.example"),
                            ("deploy/chateau-credentials.rsc.example", "chateau-credentials.rsc.example"),
                            ("deploy/upload-chateau.ps1", "upload-chateau.ps1"),
