@@ -138,7 +138,7 @@ func (o ScriptOptions) deviceName(ssid string, index int) string {
 }
 func nativeFetch(env, phase, method string, params Row) string {
 	b, _ := json.Marshal(Row{"id": 1, "method": method, "params": params})
-	return ":set " + env + " ($" + env + " . " + rosString("TRY_"+phase+"\n") + "); " + fmt.Sprintf(":local r%s [/tool/fetch url=\"http://192.168.33.1/rpc\" http-method=post http-header-field=\"Content-Type:application/json\" http-data=%s output=user as-value duration=8s]; :local a%s [:deserialize from=json ($r%s->\"data\")]; :if ([:typeof ($a%s->\"error\")] != \"nil\") do={:error \"Shelly RPC rejected\"}; :set %s ($%s . %s);", phase, rosString(string(b)), phase, phase, phase, env, env, rosString(phase+"\n"))
+	return ":set " + env + " ($" + env + " . " + rosString("TRY_"+phase+"\n") + "); " + fmt.Sprintf(":local r%s [/tool/fetch url=\"http://192.168.33.1/rpc\" http-method=post http-header-field=\"Content-Type:application/json\" http-data=%s output=user as-value duration=8s]; :local a%s [:deserialize from=json value=($r%s->\"data\")]; :if ([:typeof ($a%s->\"error\")] != \"nil\") do={:error \"Shelly RPC rejected\"}; :set %s ($%s . %s);", phase, rosString(string(b)), phase, phase, phase, env, env, rosString(phase+"\n"))
 }
 func nativeProgram(o ScriptOptions, ssid, radio, env string, index, ipNumber int) (string, error) {
 	if !shellySSID.MatchString(ssid) || !regexp.MustCompile(`^[A-Za-z0-9]+$`).MatchString(env) {

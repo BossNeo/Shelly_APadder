@@ -139,7 +139,7 @@ $taskUpdate = @'
 }
 '@
 if ($EnableManagement) {
-    $taskManagementCommand = ':if ([:len [/file/find where name="shelly-panel/data/config.before-integration.json"]] = 0) do={ /file/add name=shelly-panel/data/config.before-integration.json type=file; /file/set [/file/find where name="shelly-panel/data/config.before-integration.json"] contents=$oldConfig }; :set ($cfg->"allow_changes") true; /file/set $configFile contents=[:serialize $cfg to=json];'
+    $taskManagementCommand = ':if ([:len [/file/find where name="shelly-panel/data/config.before-integration.json"]] = 0) do={ /file/add name=shelly-panel/data/config.before-integration.json type=file; /file/set [/file/find where name="shelly-panel/data/config.before-integration.json"] contents=$oldConfig }; :set ($cfg->"allow_changes") true; /file/set $configFile contents=[:serialize to=json value=$cfg];'
     $taskUpdate = $taskUpdate.Replace('SP-MANAGEMENT-COMMAND', $taskManagementCommand)
 } else {
     $taskUpdate = $taskUpdate.Replace('SP-MANAGEMENT-COMMAND', '')
