@@ -97,9 +97,16 @@
 #controldom-studio .cd-wps-target small{display:block;color:var(--cd-muted);font-size:11px;margin-bottom:6px}
 #controldom-studio .cd-wps-target strong{display:block;font-size:16px;font-weight:500}
 @media(max-width:480px){#controldom-studio .cd-network{gap:8px}#controldom-studio .cd-net-actions{gap:7px}#controldom-studio .cd-wps-button{padding:6px 8px}#controldom-studio .cd-wps-banner{flex-wrap:wrap}#controldom-studio .cd-wps-banner-main{flex-basis:70%}#controldom-studio .cd-wps-clock{margin-left:28px}}
-#controldom-studio .cd-switch{display:flex;align-items:center;width:39px;min-width:39px;height:24px;min-height:24px;background:#24384c;border:1px solid #456077;border-radius:999px;padding:3px}
+#controldom-studio .cd-switch{display:flex;align-items:center;justify-content:flex-end;width:39px;min-width:39px;height:24px;min-height:24px;background:#24384c;border:1px solid #456077;border-radius:999px;padding:3px}
 #controldom-studio .cd-switch:before{content:'';height:16px;width:16px;border-radius:50%;background:#dceaf7}
-#controldom-studio .cd-switch[aria-checked=true]{background:#1979ca;border-color:#4a9ddd;justify-content:flex-end}
+#controldom-studio .cd-switch[aria-checked=true]{justify-content:flex-start}
+#controldom-studio .cd-switch[data-health=ok]{background:#1979ca;border-color:#4a9ddd}
+#controldom-studio .cd-switch[data-health=warning]{background:#98700c;border-color:#f1c44b}
+#controldom-studio .cd-switch[data-health=warning]:before{background:#fff0b9}
+#controldom-studio .cd-switch[data-health=off]{background:#24384c;border-color:#456077;justify-content:flex-end}
+#controldom-studio .cd-switch[data-health=ok]:hover:not(:disabled){background:#1979ca;border-color:#78baff}
+#controldom-studio .cd-switch[data-health=warning]:hover:not(:disabled){background:#98700c;border-color:#ffe08c}
+#controldom-studio .cd-switch[data-health=off]:hover:not(:disabled){background:#24384c}
 #controldom-studio .cd-hint{color:var(--cd-muted);font-size:11px;line-height:1.6;margin-top:12px}
 #controldom-studio .cd-field{display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--cd-ink);margin-bottom:13px;min-width:0}
 #controldom-studio input:not([type=checkbox]),#controldom-studio select{width:100%;min-width:0;min-height:41px;border:1px solid #324b64;background:#081321;border-radius:10px;color:var(--cd-ink);padding:10px 12px;font-size:12px;color-scheme:dark}
@@ -184,8 +191,11 @@
 #controldom-studio .cd-monitor-item p{font-size:11px}
 #controldom-studio .cd-network{display:grid;grid-template-columns:30px minmax(0,1fr);column-gap:10px;row-gap:10px}
 #controldom-studio .cd-net-icon{align-self:start}
-#controldom-studio .cd-net-actions{grid-column:2;display:flex;gap:8px;flex-wrap:wrap}
-#controldom-studio .cd-net-actions .cd-switch{margin-left:auto}
+#controldom-studio .cd-net-actions{grid-column:2;display:grid;grid-template-columns:minmax(0,1fr) auto 39px;align-items:center;gap:8px}
+#controldom-studio .cd-net-actions .cd-password-button{justify-self:start}
+#controldom-studio .cd-net-actions .cd-switch{margin-left:0;justify-self:end}
+#controldom-studio .cd-network-internet[data-health=warning]{color:#f1c44b}
+#controldom-studio .cd-network-internet[data-health=ok]{color:#79bdff}
 #controldom-studio .cd-password-button{font-size:11px;padding:6px 11px;min-height:32px}
 #controldom-studio .cd-network-internet{grid-column:2;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--cd-muted);flex-wrap:wrap}
 #controldom-studio .cd-network-internet .cd-button{font-size:11px;min-height:30px;padding:4px 9px}

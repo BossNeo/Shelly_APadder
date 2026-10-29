@@ -12,6 +12,22 @@ function blocked(){return requestBusy||state?.job?.state==='running'||!!state?.w
 function managed(){const list=(state?.interfaces||[]).filter(n=>n.managed),radio=list.find(n=>!n.virtual);return list.map((n,index)=>({...n,index,on:n.enabled&&(!n.virtual||radio?.enabled)})).sort((a,b)=>Number(b.on)-Number(a.on)||a.index-b.index);}
 function rate(n){return Number.isFinite(Number(n))?(Number(n)/1e6).toLocaleString('bg-BG',{maximumFractionDigits:2})+' Mbit/s':'—';}
 function traffic(name){const t=metrics.traffic?.[name];return t&&(t.available!==false)?'↓ '+rate(t.rx_bps)+' / ↑ '+rate(t.tx_bps):'Изчакване на данни за трафика';}
+function networkHealth(n){
+  const result=(color,label)=>({color,label});
+  if(!n.on)return result('off',n.enabled?'Основното 2.4 GHz радио е изключено':'Мрежата е изключена');
+  if(state?.job?.state==='running')return result('warning','Временна пауза за текущата операция');
+  if(state?.recovery)return result('warning','Нужно е възстановяване на мрежите');
+  const c=n.checks||{};
+  if(c.ap!==true)return result('warning','AP режимът не е потвърден');
+  if(c.running!==true)return result('warning',c.running===false?'Wi-Fi интерфейсът не работи':'Няма данни дали Wi-Fi работи');
+  if(c.lan!==true)return result('warning',c.lan===false?'Няма активна връзка към LAN bridge':'LAN връзката не е проверена');
+  if(c.dhcp!==true)return result('warning',c.dhcp===false?'Няма активен DHCP сървър за LAN':'DHCP сървърът не е проверен');
+  if(metrics.paused||!metrics.time||Date.now()/1000-metrics.time>40)return result('warning','Изчакване на актуална интернет проверка');
+  const status=metrics.internet?.status;
+  if(status==='demo')return result('ok','Демонстрация: симулиран интернет и работеща мрежа');
+  if(status==='reachable')return result('ok','Интернет достъпен от рутера · Wi-Fi / LAN / DHCP: OK');
+  return result('warning',status==='no_reply'?'Няма отговор от интернет към рутера':'Интернет достъпът не е потвърден');
+}
 function view(history){$('main-content').hidden=history;$('history-content').hidden=!history;$('live-panel').hidden=history;$('main-view').setAttribute('aria-pressed',String(!history));$('history-view').setAttribute('aria-pressed',String(history));location.hash=history?'history':'';}
 function renderEvents(events=[]){
   if(events.length&&events[events.length-1].id<sequence){sequence=0;$('live-log').replaceChildren();}
@@ -23,12 +39,12 @@ function renderJob(job){state.job=job;$('job-message').textContent=job.message;r
 function controls(){const disabled=blocked();for(const id of ['new-project','all-on','all-off','scan','provision'])$(id).disabled=disabled;for(const input of $('script-form').elements)input.disabled=disabled;for(const el of document.querySelectorAll('[data-write]'))el.disabled=disabled||el.dataset.off==='true';$('stop-wps').disabled=requestBusy;}
 function renderNetworks(){
   const nets=managed();$('network-count').textContent='2.4 GHz · '+nets.filter(n=>n.on).length+' включени';$('network-list').replaceChildren();
-  for(const n of nets){const row=node('div',undefined,'cd-network'),meta=node('div',undefined,'cd-net-meta');meta.append(node('strong',n.ssid||n.name),node('small',n.name+' · '+(n.virtual?'Мрежа за обект':'Основна мрежа')));
+  for(const n of nets){const row=node('div',undefined,'cd-network'),meta=node('div',undefined,'cd-net-meta'),health=networkHealth(n);meta.append(node('strong',n.ssid||n.name),node('small',n.name+' · '+(n.virtual?'Мрежа за обект':'Основна мрежа')));
     const count=metrics.clients_available===false||!metrics.clients?null:Number(metrics.clients[n.name]||0),running=state.job.state==='running';
     meta.append(node('small',(n.on?(running?'Временно паузирана':'Включена'):'Изключена')+' · '+(count===null?'клиенти: няма данни':(n.on&&!running?count:0)+' свързани устройства'),'cd-net-status'+(n.on?' cd-on':'')),node('small',n.on&&!running?traffic(n.name):'↓ 0 / ↑ 0 Mbit/s','cd-net-traffic'));
     const actions=node('div',undefined,'cd-net-actions'),password=button('Покажи парола',()=>showPassword(n),'cd-password-button');password.setAttribute('aria-label','Покажи парола за '+(n.ssid||n.name));
-    const wps=button('WPS',()=>confirmWPS(n),'cd-wps-button');wps.dataset.write='';wps.setAttribute('aria-label','WPS за '+(n.ssid||n.name));const toggle=button('',()=>switchNetwork(n),'cd-switch');toggle.dataset.write='';toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',String(n.enabled));toggle.setAttribute('aria-label',(n.enabled?'Изключи ':'Включи ')+(n.ssid||n.name));actions.append(password,wps,toggle);
-    const internet=node('div',undefined,'cd-network-internet'),probe=probes.get(n.name);internet.append(node('span','Интернет: '+(!n.on?'мрежата е изключена':probe?'тестът е от рутера · SSID непроверен':'непроверен')));const check=button('Провери',async()=>{const r=await api('probe',{interface:n.name});probes.set(n.name,r);toast((r.router_status==='reachable'?'Рутерът достига интернет. ':'Няма потвърден отговор от интернет. ')+r.detail);renderNetworks();controls();});check.dataset.write='';check.dataset.off=String(!n.on);check.disabled=!n.on||blocked();internet.append(check);row.append(node('span','⌁','cd-net-icon'),meta,actions,internet);$('network-list').append(row);
+    const wps=button('WPS',()=>confirmWPS(n),'cd-wps-button');wps.dataset.write='';wps.setAttribute('aria-label','WPS за '+(n.ssid||n.name));const toggle=button('',()=>switchNetwork(n),'cd-switch');toggle.dataset.write='';toggle.dataset.health=health.color;toggle.title=health.label;toggle.setAttribute('aria-description',health.label);toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',String(n.enabled));toggle.setAttribute('aria-label',(n.enabled?'Изключи ':'Включи ')+(n.ssid||n.name));actions.append(password,wps,toggle);
+    const internet=node('div',undefined,'cd-network-internet');internet.dataset.health=health.color;internet.append(node('span',health.label));const check=button('Провери',async()=>{const r=await api('probe',{interface:n.name});probes.set(n.name,r);await refreshState();metrics=await api('telemetry');metricAt=Date.now();renderMetrics();renderNetworks();toast(r.detail);controls();});check.dataset.write='';check.dataset.off=String(!n.on);check.disabled=!n.on||blocked();internet.append(check);row.append(node('span','⌁','cd-net-icon'),meta,actions,internet);$('network-list').append(row);
   }
   controls();
 }

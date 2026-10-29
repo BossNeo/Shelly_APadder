@@ -131,7 +131,7 @@ func (s *Service) routerProbe() Row {
 	return result
 }
 func (s *Service) probeNetwork(name string) (Row, error) {
-	if !s.gate.TryLock() {
+	if !s.mutationLock() {
 		return nil, errors.New("Изчакай активната операция")
 	}
 	defer s.gate.Unlock()
@@ -149,6 +149,11 @@ func (s *Service) probeNetwork(name string) (Row, error) {
 	} else {
 		probe := s.routerProbe()
 		result["router_status"] = probe["status"]
+		s.telemetryMu.Lock()
+		s.probeStatus = probe
+		s.probeAt = time.Now()
+		s.telemetryAt = time.Time{}
+		s.telemetryMu.Unlock()
 	}
 	s.event("info", "Проверка за "+str(n["configuration.ssid"])+": тест от рутера, клиентският достъп остава непроверен")
 	return result, nil

@@ -237,6 +237,60 @@ func TestTelemetryClientCountsCachingAndCounterReset(t *testing.T) {
 		t.Fatal("Counter reset produced a false rate", out, e)
 	}
 }
+
+type healthRouter struct {
+	*fakeRouter
+	unavailable string
+}
+
+func (r *healthRouter) Rows(path string, body Row) ([]Row, error) {
+	if path == r.unavailable {
+		return nil, errors.New("Health data unavailable")
+	}
+	return r.fakeRouter.Rows(path, body)
+}
+func TestNetworkChecksReportMissingLANAndDHCPWithoutClaimingClientInternet(t *testing.T) {
+	for _, failure := range []string{"", "bridge", "dhcp", "radio", "unknown-lan", "unknown-dhcp"} {
+		s, f := fixture(t)
+		byName(f.tables[wifi], "wifi2")["running"] = "true"
+		f.tables["ip/dhcp-server"] = []Row{{"interface": "bridge", "disabled": "false", "invalid": "false"}}
+		r := &healthRouter{fakeRouter: f}
+		s.router = r
+		switch failure {
+		case "bridge":
+			f.tables["interface/bridge/port"] = nil
+		case "dhcp":
+			f.tables["ip/dhcp-server"][0]["disabled"] = "true"
+		case "radio":
+			byName(f.tables[wifi], "wifi2")["running"] = "false"
+		case "unknown-lan":
+			r.unavailable = "interface/bridge/port"
+		case "unknown-dhcp":
+			r.unavailable = "ip/dhcp-server"
+		}
+		out, e := s.overview()
+		if e != nil {
+			t.Fatal(failure, e)
+		}
+		checks := byName(out["interfaces"].([]Row), "wifi2")["checks"].(Row)
+		want := Row{"ap": true, "running": true, "lan": true, "dhcp": true}
+		switch failure {
+		case "bridge":
+			want["lan"] = false
+		case "dhcp":
+			want["dhcp"] = false
+		case "radio":
+			want["running"] = false
+		case "unknown-lan":
+			want["lan"] = nil
+		case "unknown-dhcp":
+			want["dhcp"] = nil
+		}
+		if !reflect.DeepEqual(checks, want) {
+			t.Fatal(failure, checks, want)
+		}
+	}
+}
 func TestExternalTargetAcceptedWithoutLocalProjectOrEnabledSSID(t *testing.T) {
 	s, _ := fixture(t)
 	s.demo = true

@@ -291,9 +291,38 @@ func (s *Service) overview() (Row, error) {
 	if radio == nil {
 		radio = Row{"name": "__unconfigured__"}
 	}
+	ports, portError := s.router.Rows("interface/bridge/port", Row{".proplist": "interface,bridge,disabled,inactive"})
+	dhcp, dhcpError := s.router.Rows("ip/dhcp-server", Row{".proplist": "interface,disabled,invalid"})
 	nets := []Row{}
 	for _, r := range rows {
-		nets = append(nets, Row{"name": r["name"], "ssid": str(r["configuration.ssid"]), "band": str(r["channel.band"]), "enabled": active(r), "virtual": str(r["master-interface"]) != "", "protected": str(r["name"]) == s.config.Protected5G, "managed": s.managed(r, radio)})
+		mode := str(r["configuration.mode"])
+		if mode == "" && str(r["master-interface"]) != "" {
+			mode = str(byName(rows, str(r["master-interface"]))["configuration.mode"])
+		}
+		checks := Row{"ap": mode == "ap", "running": nil, "lan": nil, "dhcp": nil}
+		if v, exists := r["running"]; exists {
+			checks["running"] = flag(v)
+		}
+		if portError == nil {
+			checks["lan"] = false
+			for _, p := range ports {
+				if str(p["interface"]) == str(r["name"]) && str(p["bridge"]) == s.config.Bridge && !flag(p["disabled"]) && !flag(p["inactive"]) {
+					checks["lan"] = true
+				}
+			}
+		}
+		if dhcpError == nil {
+			checks["dhcp"] = false
+			for _, d := range dhcp {
+				if str(d["interface"]) == s.config.Bridge && !flag(d["disabled"]) && !flag(d["invalid"]) {
+					checks["dhcp"] = true
+				}
+			}
+		}
+		if s.demo {
+			checks = Row{"ap": true, "running": active(r), "lan": true, "dhcp": true}
+		}
+		nets = append(nets, Row{"name": r["name"], "ssid": str(r["configuration.ssid"]), "band": str(r["channel.band"]), "enabled": active(r), "virtual": str(r["master-interface"]) != "", "protected": str(r["name"]) == s.config.Protected5G, "managed": s.managed(r, radio), "checks": checks})
 	}
 	data := s.store.read()
 	projects := []Row{}
