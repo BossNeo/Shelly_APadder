@@ -28,7 +28,7 @@ import (
 //go:embed static/index.html static/app.js static/style.css static/brand/*
 var assets embed.FS
 
-const panelVersion = "2026.10.29.7"
+const panelVersion = "2026.10.29.8"
 
 type Session struct {
 	CSRF    string
