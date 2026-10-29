@@ -25,10 +25,10 @@ import (
 	"time"
 )
 
-//go:embed static/index.html static/app.js static/style.css
+//go:embed static/index.html static/app.js static/style.css static/brand/*
 var assets embed.FS
 
-const panelVersion = "2026.10.29.2"
+const panelVersion = "2026.10.29.3"
 
 type Session struct {
 	CSRF    string
@@ -191,14 +191,26 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, out)
 }
 func (a *App) get(w http.ResponseWriter, r *http.Request) {
-	asset := map[string]string{"/": "index.html", "/app.js": "app.js", "/style.css": "style.css"}[r.URL.Path]
+	asset := map[string]string{
+		"/": "index.html", "/app.js": "app.js", "/style.css": "style.css",
+		"/brand/controldom-logo.png":    "brand/controldom-logo.png",
+		"/brand/inter-cyrillic.woff2":   "brand/inter-cyrillic.woff2",
+		"/brand/inter-latin.woff2":      "brand/inter-latin.woff2",
+		"/brand/manrope-cyrillic.woff2": "brand/manrope-cyrillic.woff2",
+		"/brand/manrope-latin.woff2":    "brand/manrope-latin.woff2",
+		"/brand/OFL-Inter.txt":          "brand/OFL-Inter.txt", "/brand/OFL-Manrope.txt": "brand/OFL-Manrope.txt",
+	}[r.URL.Path]
 	if asset != "" {
 		b, e := assets.ReadFile("static/" + asset)
 		if e != nil {
 			fail(w, 500, "Липсва ресурс")
 			return
 		}
-		w.Header().Set("Content-Type", mime.TypeByExtension(filepath.Ext(asset)))
+		contentType := mime.TypeByExtension(filepath.Ext(asset))
+		if filepath.Ext(asset) == ".woff2" {
+			contentType = "font/woff2"
+		}
+		w.Header().Set("Content-Type", contentType)
 		w.WriteHeader(200)
 		_, _ = w.Write(b)
 		return

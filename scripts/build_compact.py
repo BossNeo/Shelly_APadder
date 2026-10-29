@@ -60,7 +60,9 @@ def main():
     go_root = Path(subprocess.check_output([go, "env", "GOROOT"], text=True).strip())
     files = {"shelly-panel": (executable, 0o755),
              "licenses/Shelly-APadder-LICENSE": ((ROOT / "LICENSE").read_bytes(), 0o644),
-             "licenses/Go-LICENSE": ((go_root / "LICENSE").read_bytes(), 0o644)}
+             "licenses/Go-LICENSE": ((go_root / "LICENSE").read_bytes(), 0o644),
+             "licenses/Manrope-OFL.txt": ((ROOT / "panel/static/brand/OFL-Manrope.txt").read_bytes(), 0o644),
+             "licenses/Inter-OFL.txt": ((ROOT / "panel/static/brand/OFL-Inter.txt").read_bytes(), 0o644)}
     layer_io = io.BytesIO()
     with tarfile.open(fileobj=layer_io, mode="w", format=tarfile.USTAR_FORMAT) as layer:
         for directory, mode in (("data", 0o700), ("tmp", 0o1777), ("licenses", 0o755)):

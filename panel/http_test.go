@@ -35,10 +35,13 @@ func TestHTTPAuthHostOriginCSRFAndAssets(t *testing.T) {
 	if w := request(a, "GET", "/api/state", host, "", "", "", ""); w.Code != 401 {
 		t.Fatal(w.Code)
 	}
-	for _, p := range []string{"/", "/app.js", "/style.css"} {
+	for _, p := range []string{"/", "/app.js", "/style.css", "/brand/controldom-logo.png", "/brand/inter-cyrillic.woff2", "/brand/inter-latin.woff2", "/brand/manrope-cyrillic.woff2", "/brand/manrope-latin.woff2"} {
 		w := request(a, "GET", p, host, "", "", "", "")
 		if w.Code != 200 || w.Header().Get("Content-Security-Policy") == "" {
 			t.Fatal(p, w.Code)
+		}
+		if strings.HasSuffix(p, ".woff2") && w.Header().Get("Content-Type") != "font/woff2" {
+			t.Fatal("font MIME type missing", p)
 		}
 	}
 	if w := request(a, "GET", "/api/session", "evil.invalid", "", "", "", ""); w.Code != 403 {

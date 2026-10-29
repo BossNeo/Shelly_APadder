@@ -2,27 +2,26 @@
 <html lang="bg">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#123e3b"><title>Shelly • Локална станция</title>
+  <meta name="theme-color" content="#070d18"><title>Контрол Дом • Shelly станция</title>
+  <link rel="icon" type="image/png" href="/brand/controldom-logo.png">
   <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
 </head>
 <body>
-<aside class="sidebar">
-  <a class="brand" href="/" aria-label="Начало"><span class="brand-icon">s</span><span>shelly<span class="brand-small">ЛОКАЛНА СТАНЦИЯ</span></span></a>
-  <p class="nav-label">РАБОТНО ПРОСТРАНСТВО</p>
-  <nav><a href="#networks" class="active"><span>◫</span> Мрежи за обекти</a><a href="#onboard"><span>⌁</span> Добавяне на Shelly</a><a href="#history"><span>≡</span> Журнал</a></nav>
-  <div class="sidebar-note"><span class="online-dot"></span> Работи изцяло локално<p>Профилите и управлението са на твоята станция. Интернет не е необходим.</p></div>
-  <div class="sidebar-footer">MIKROTIK × SHELLY<span>Твоят инструмент за всеки обект.</span></div>
+<aside class="sidebar" aria-label="Навигация на станцията">
+  <div class="brand-bar">
+    <a class="brand" href="/" aria-label="Контрол Дом — начало"><img src="/brand/controldom-logo.png" class="brand-logo" alt="Лого на Контрол Дом" width="64" height="57"><span class="brand-text"><strong>КОНТРОЛ ДОМ</strong><small>ЛОКАЛНА СТАНЦИЯ</small></span></a>
+    <nav aria-label="Основна навигация"><a href="#networks" class="active">Мрежи за обекти</a><a href="#onboard">Добавяне на Shelly</a><a href="#history">Журнал</a></nav>
+    <span class="local-status"><span class="online-dot"></span>Без облак. Без интернет.</span>
+  </div>
 </aside>
 <main>
-  <header><span class="breadcrumb">Инструменти <span>/</span> Shelly станция</span><div><span id="demo-badge" class="badge amber" hidden>ДЕМОНСТРАЦИЯ</span><button id="logout" class="quiet" hidden>Изход</button></div></header>
+  <header><span class="breadcrumb">MikroTik <span>/</span> Shelly станция</span><div><span id="demo-badge" class="badge amber" hidden>ДЕМОНСТРАЦИЯ</span><button id="logout" class="quiet" hidden>Изход</button></div></header>
   <section id="login" class="login-card card">
-    <span class="eyebrow">ДОБРЕ ДОШЪЛ</span><h1>Всичко за обекта.<br>На едно място.</h1>
-    <p>Влез с паролата за локалния панел.</p>
-    <form id="login-form"><label>Парола за панела<input id="login-password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Вход в станцията <span>→</span></button></form>
-    <p id="demo-login" class="hint" hidden>Демо парола: <code>demo-local</code>. Няма връзка с истински рутер.</p>
+    <div class="login-intro"><span class="eyebrow">КОНТРОЛ ДОМ · ИНСТРУМЕНТИ ЗА ОБЕКТА</span><h1>Подготви мрежата.<br><span class="grad">Свържи устройствата.</span></h1><p>Твоите обекти, Wi-Fi мрежи и Shelly устройства. На едно място, директно на рутера.</p><div class="login-tags"><span>MikroTik + Shelly</span><span>Изцяло локално</span><span>Без облачна зависимост</span></div><p class="brand-motto">Всеки дом заслужава да бъде умен.</p></div>
+    <div class="login-access"><img src="/brand/controldom-logo.png" class="login-logo" alt="Контрол Дом" width="100" height="89"><h2>Вход в станцията</h2><p>Използвай паролата за локалния панел.</p><form id="login-form"><label>Парола за панела<input id="login-password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Влез в панела <span>→</span></button></form><p id="demo-login" class="hint" hidden>Демо парола: <code>demo-local</code>. Няма връзка с истински рутер.</p></div>
   </section>
   <div id="workspace" hidden>
-    <section class="page-heading"><div><span class="eyebrow">ГОТОВ ЗА СЛЕДВАЩИЯ ОБЕКТ</span><h1>Твоята локална станция</h1><p>Управлявай мрежите. Добавяй устройства. Продължи работа.</p></div><button id="refresh" class="secondary">↻ &nbsp; Обнови</button></section>
+    <section class="page-heading"><div><span class="eyebrow">КОНТРОЛ ДОМ · ЛОКАЛНО УПРАВЛЕНИЕ</span><h1>Твоят обект. <span class="grad">Под контрол.</span></h1><p>Управлявай мрежите и подготвяй Shelly устройствата от едно място.</p></div><button id="refresh" class="secondary">↻ &nbsp; Обнови</button></section>
     <div id="warning" class="notice amber" hidden></div>
     <div id="recovery" class="notice danger" hidden><span>Има незавършено възстановяване. Промените са блокирани.</span><button id="recover" class="secondary">Възстанови рутера</button></div>
     <section class="stats" aria-label="Състояние на станцията">
@@ -31,11 +30,12 @@
       <article class="card"><span class="stat-icon">↟</span><span class="stat-label">СВОБОДНА RAM</span><strong id="ram">—</strong><small id="storage">—</small></article>
     </section>
     <section class="management"><div class="lock-symbol">⌑</div><div><strong>Постоянен достъп през 5 GHz</strong><p id="protected-name">Защитеният интерфейс не се включва в операциите по работните мрежи.</p></div><span class="badge green">ЗАЩИТЕНА МРЕЖА</span></section>
-    <section id="networks" class="section-block"><div class="section-title"><div><h2>Мрежи за обекти <span id="project-count" class="count">0</span></h2><p>Запазени настройки за бърза подготовка на устройства.</p></div><button id="new-project" class="primary">＋ &nbsp; Нов обект</button></div>
+    <div class="work-grid">
+    <section id="networks" class="section-block card"><div class="section-title"><div><span class="eyebrow">01 · РАБОТНИ МРЕЖИ</span><h2>Мрежи за обекти <span id="project-count" class="count">0</span></h2><p>Избери кои мрежи да работят.</p></div><button id="new-project" class="primary">＋ &nbsp; Нов обект</button></div>
       <div class="network-toolbar"><span>РАБОТНИ WI-FI МРЕЖИ · 2.4 GHz</span><div><button id="all-on" class="quiet">Включи всички</button><button id="all-off" class="quiet">Изключи всички</button></div></div>
       <div id="network-list" class="network-list"></div><p class="hint">Новите Wi-Fi мрежи използват избрания LAN bridge и неговите DHCP и интернет настройки. Не създават отделни VLAN или изолирани подмрежи.</p>
     </section>
-    <section id="onboard" class="card onboard"><div class="section-title"><div><span class="eyebrow">ПОДГОТОВКА НА УСТРОЙСТВА</span><h2>От кутията към мрежата.</h2><p>Открий фабричните Shelly AP и избери кои да добавиш към обекта.</p></div><span class="line-art">⌁</span></div>
+    <section id="onboard" class="card onboard"><div class="section-title"><div><span class="eyebrow">02 · ПОДГОТОВКА НА УСТРОЙСТВА</span><h2>Добавяне на Shelly</h2><p>Открий устройствата и ги свържи към обекта.</p></div><span class="line-art" aria-hidden="true">⌁</span></div>
       <div class="onboard-controls"><label>Мрежа на обекта<select id="target"><option value="">Избери обект…</option></select></label><button id="scan" class="secondary">⌕ &nbsp; Сканирай за Shelly</button></div>
       <p class="hint">1. Сканирай за фабрични Shelly устройства. 2. Маркирай устройствата. 3. Избери включена мрежа на обекта и ги свържи към нея. Преди всяка операция ще поискаме потвърждение за временната пауза на 2.4 GHz.</p>
       <div id="devices" class="devices"><p class="empty">Все още няма открити устройства.<br><span>Включи Shelly устройствата във фабричен AP режим и стартирай сканиране.</span></p></div>
@@ -44,8 +44,9 @@
       <p id="provision-help" class="hint" role="status">Първо сканирай за Shelly устройства.</p>
       <div id="results"></div><p class="hint">Shelly Gen2+ • DHCP • Без автоматично включване на облака. При непотвърдено свързване AP остава достъпен.</p>
     </section>
+    </div>
     <section id="history" class="section-block"><div class="section-title"><div><h2>Последни операции</h2><p>Резултатите се пазят локално на станцията.</p></div><span class="badge neutral">ЛОКАЛЕН ЖУРНАЛ</span></div><div id="history-list" class="card history-list"></div></section>
-    <footer><span id="router-detail">RouterOS</span><span id="panel-version">Локално. Под твой контрол.</span></footer>
+    <footer><span id="router-detail">RouterOS</span><span>КОНТРОЛ ДОМ · <span id="panel-version">Локално. Под твой контрол.</span></span></footer>
   </div>
 </main>
 <dialog id="operation-dialog" aria-labelledby="operation-title" aria-describedby="operation-detail operation-access"><form method="dialog"><h2 id="operation-title">Потвърди операцията</h2><p id="operation-detail"></p><p id="operation-access"></p><p>2.4 GHz мрежите временно ще прекъснат. След операцията панелът ще възстанови настройките им.</p><div class="dialog-actions"><button class="secondary" value="cancel" autofocus>Отказ</button><button id="confirm-operation" class="primary" value="confirm">Използвам 5 GHz или кабел — продължи</button></div></form></dialog>
