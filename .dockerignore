@@ -1,0 +1,5 @@
+*
+!panel/
+!panel/**
+panel/**/__pycache__/
+panel/**/*.pyc

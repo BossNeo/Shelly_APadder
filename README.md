@@ -1,46 +1,49 @@
-# MikroTik Shelly Device Fast Network Integration Script
+# Shelly APadder — локална MikroTik станция
 
-## Overview
-Introducing a dynamic MikroTik script designed to seamlessly integrate numerous Shelly devices into a selected network. This innovative solution empowers users with the ability to effortlessly add multiple Shelly devices, offering customizable features such as automatic AP shutdown upon successful integration, cloud activation, and the flexibility to assign static IP addresses in ascending order. Elevate your network management experience with unparalleled efficiency and control.
+Уеб панел на български за мрежи за обекти и добавяне на Shelly Gen2+ през MikroTik RouterOS v7. Подготвен за ARM64 container на Chateau LTE7 ax. След инсталиране работи без интернет, CDN, облак или допълнителни Python библиотеки.
 
-## Features
-- **Fast Integration**: Quickly adds multiple Shelly devices to the network.
-- **Enhanced Manageability**: Simplifies device manipulation through network management tools.
-- **Flexible Configuration**: Customizable settings within the script for seamless integration.
+**Статус: код и автоматични проверки със симулиран RouterOS. Няма инсталация на рутер, построен container образ или изпитване с физическо Shelly.** Преди инсталиране потвърди модела и възстановяването на конкретния firmware.
 
-## Requirements
-- MikroTik router running RouterOS
-- Router configured as a station with a clear security profile
+## Възможности
 
-## Installation
-1. Download the script file (`TheScript.rsc`) from the [GitHub repository](link-to-repo).
-2. Connect to your MikroTik router via WinBox or SSH.
-3. Open the Terminal window and upload the script file to the router's filesystem.
+- Нови изключени 2.4 GHz SSID в съществуващия LAN bridge и профили за съществуващи разрешени виртуални мрежи.
+- Включване/изключване поотделно или заедно; защита на физическото 5 GHz радио и произволни интерфейси.
+- Откриване и избор на фабрични Shelly AP, JSON POST за Wi-Fi настройките, DHCP и опционални поредни имена.
+- Проверка на идентичността и целевия SSID през LAN преди изключване на Shelly AP.
+- Възстановяване на 2.4 GHz конфигурацията, bridge порта и състоянията след всяка сесия, постоянен recovery журнал и независим RouterOS watchdog.
+- Локален журнал; Wi-Fi паролите не се връщат към браузъра или записват в URL.
 
-   ```bash
-   /file upload file-name=TheScript.rsc
-## Configuration
-1. Open the script file (ThScript.rsc) in a text editor.
-2. Modify the configurable settings within the script.
-3. Network selection for Shelly devices.
-   
-  :global SSIDName YourSSID;
+Добавянето временно прекъсва 2.4 GHz мрежите. Използвай 5 GHz или кабел за достъп. В нормален режим няма фоново сканиране. Приложението не променя LTE/WAN настройките. Новите SSID използват съществуващите LAN/DHCP настройки и не са изолирани подмрежи/VLAN.
 
-  :global PASS YourPass;
-  
-Automatic AP shutdown after device connection.
-:global TurnOffAP 1;  // 1 is on 0 is off
-Manual IP address assignment starting point.
+## Демо на компютъра
 
-## Usage
-Ensure your MikroTik router is configured as a station with a clear security profile.
-Run the script by executing the import command as mentioned in the installation steps.
+Python 3.12+:
 
-##  Contributing
-Contributions are welcome! Please fork the repository and submit a pull request with any improvements or features you'd like to add.
+```sh
+python -m panel.server --demo --bind 127.0.0.1 --data ./data/demo
+```
 
-License
-This project is licensed under the GPL v3 License.
+На Windows може и `start-demo.ps1`. Отвори **http://127.0.0.1:8088** с парола **`demo-local`**. Демото е ясно обозначена симулация и не се свързва към рутер. Данните му са отделни от live инсталацията.
 
-Acknowledgments
-Thanks to the MikroTik community for inspiration and support.
+## Инсталиране върху рутера
+
+Следвай [ръководството](docs/INSTALL.bg.md). Започни с [проверка само за четене](deploy/inspect-router.rsc) и `allow_changes=false`.
+
+За приложението не е необходим `/partitions repartition`: това е механизъм за RouterOS инсталации, който преформатира NAND и рестартира устройството. Предпочитаният вариант е USB директория за container root и постоянните данни. Вътрешна инсталация изисква измерване на реалното свободно място.
+
+Shelly Gen1, устройства с Shelly автентикация и статично IP програмиране не са част от новия backend. Облачната настройка се запазва. За постоянни адреси могат да се използват DHCP reservations в RouterOS.
+
+## Проверки
+
+```sh
+python -m unittest discover -s tests -v
+node --check panel/static/app.js
+```
+
+Проверяват се защита на 5 GHz, грешен модел/радио, възстановяване при грешка, recovery журнал, филтриране на AP, идентичност и целеви SSID, HTTP вход, Host/Origin и CSRF защити. Симулацията не валидира синтаксиса или поведението на реалния firmware.
+
+## Стар скрипт
+
+Оригиналният [TheScript](TheScript) е запазен за справка. Писан е за hAP ax lite LTE6 и използва твърдо `wifi1`. **Не го стартирай на новия рутер без проверка кое радио е wifi1** — може да прекъсне 5 GHz достъпа.
+
+Лиценз: GPL-3.0, виж [LICENSE](LICENSE).

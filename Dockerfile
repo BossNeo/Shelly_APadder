@@ -1,0 +1,8 @@
+FROM python:3.12-alpine
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY panel /app/panel
+RUN mkdir /data && chmod 700 /data
+EXPOSE 8088
+VOLUME ["/data"]
+CMD ["python", "-m", "panel.server"]

@@ -1,0 +1,23 @@
+# TEMPLATE ONLY: review docs/INSTALL.bg.md; never blindly import.
+# Assumes management LAN 192.168.88.0/24, no overlap with 172.31.253.0/29,
+# existing IPv4 filter rules and no sp-* interfaces/chains. Review FastTrack and IPv6.
+# No Wi-Fi change, disk formatting or repartitioning.
+/interface/bridge/add name=sp-containers comment="shelly-panel container"
+/ip/address/add address=172.31.253.1/29 interface=sp-containers comment="shelly-panel container"
+/interface/veth/add name=sp-veth address=172.31.253.2/29 gateway=172.31.253.1
+/interface/bridge/port/add interface=sp-veth bridge=sp-containers
+
+# Dedicated chains, before existing filter rules.
+/ip/firewall/filter/add chain=sp-input action=accept src-address=172.31.253.2 dst-address=172.31.253.1 protocol=tcp dst-port=80
+/ip/firewall/filter/add chain=sp-input action=drop src-address=172.31.253.2
+/ip/firewall/filter/add chain=sp-input action=return
+/ip/firewall/filter/add chain=input action=jump jump-target=sp-input place-before=0 comment="shelly-panel input"
+/ip/firewall/filter/add chain=sp-forward action=accept src-address=192.168.88.0/24 dst-address=172.31.253.2 protocol=tcp dst-port=8088
+/ip/firewall/filter/add chain=sp-forward action=accept src-address=172.31.253.2 dst-address=192.168.88.0/24 connection-state=established,related
+/ip/firewall/filter/add chain=sp-forward action=drop dst-address=172.31.253.2
+/ip/firewall/filter/add chain=sp-forward action=drop src-address=172.31.253.2
+/ip/firewall/filter/add chain=sp-forward action=return
+/ip/firewall/filter/add chain=forward action=jump jump-target=sp-forward place-before=0 comment="shelly-panel forward"
+
+# Panel on separate port; preserve WebFig, no WAN exposure or internet NAT.
+/ip/firewall/nat/add chain=dstnat src-address=192.168.88.0/24 dst-address=192.168.88.1 protocol=tcp dst-port=8088 action=dst-nat to-addresses=172.31.253.2 to-ports=8088 comment="shelly-panel local UI"

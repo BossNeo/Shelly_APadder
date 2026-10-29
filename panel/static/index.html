@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123e3b"><title>Shelly • Локална станция</title>
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="Начало"><span class="brand-icon">s</span><span>shelly<span class="brand-small">ЛОКАЛНА СТАНЦИЯ</span></span></a>
+  <p class="nav-label">РАБОТНО ПРОСТРАНСТВО</p>
+  <nav><a href="#networks" class="active"><span>◫</span> Мрежи за обекти</a><a href="#onboard"><span>⌁</span> Добавяне на Shelly</a><a href="#history"><span>≡</span> Журнал</a></nav>
+  <div class="sidebar-note"><span class="online-dot"></span> Работи изцяло локално<p>Профилите и управлението са на твоята станция. Интернет не е необходим.</p></div>
+  <div class="sidebar-footer">MIKROTIK × SHELLY<span>Твоят инструмент за всеки обект.</span></div>
+</aside>
+<main>
+  <header><span class="breadcrumb">Инструменти <span>/</span> Shelly станция</span><div><span id="demo-badge" class="badge amber" hidden>ДЕМОНСТРАЦИЯ</span><button id="logout" class="quiet" hidden>Изход</button></div></header>
+  <section id="login" class="login-card card">
+    <span class="eyebrow">ДОБРЕ ДОШЪЛ</span><h1>Всичко за обекта.<br>На едно място.</h1>
+    <p>Влез с паролата за локалния панел.</p>
+    <form id="login-form"><label>Парола за панела<input id="login-password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Вход в станцията <span>→</span></button></form>
+    <p id="demo-login" class="hint" hidden>Демо парола: <code>demo-local</code>. Няма връзка с истински рутер.</p>
+  </section>
+  <div id="workspace" hidden>
+    <section class="page-heading"><div><span class="eyebrow">ГОТОВ ЗА СЛЕДВАЩИЯ ОБЕКТ</span><h1>Твоята локална станция</h1><p>Управлявай мрежите. Добавяй устройства. Продължи работа.</p></div><button id="refresh" class="secondary">↻ &nbsp; Обнови</button></section>
+    <div id="warning" class="notice amber" hidden></div>
+    <div id="recovery" class="notice danger" hidden><span>Има незавършено възстановяване. Промените са блокирани.</span><button id="recover" class="secondary">Възстанови рутера</button></div>
+    <section class="stats" aria-label="Състояние на станцията">
+      <article class="card"><span class="stat-icon">◉</span><span class="stat-label">РЕЖИМ НА СТАНЦИЯТА</span><strong id="mode">Рутер</strong><small id="mode-detail">Нормална работа на мрежите</small></article>
+      <article class="card"><span class="stat-icon">◫</span><span class="stat-label">РАБОТНИ МРЕЖИ</span><strong id="net-count">—</strong><small>включени мрежи за обекти</small></article>
+      <article class="card"><span class="stat-icon">↟</span><span class="stat-label">СВОБОДНА RAM</span><strong id="ram">—</strong><small id="storage">—</small></article>
+    </section>
+    <section class="management"><div class="lock-symbol">⌑</div><div><strong>Постоянен достъп през 5 GHz</strong><p id="protected-name">Защитеният интерфейс не се включва в операциите по работните мрежи.</p></div><span class="badge green">ЗАЩИТЕНА МРЕЖА</span></section>
+    <section id="networks" class="section-block"><div class="section-title"><div><h2>Мрежи за обекти <span id="project-count" class="count">0</span></h2><p>Запазени настройки за бърза подготовка на устройства.</p></div><button id="new-project" class="primary">＋ &nbsp; Нов обект</button></div>
+      <div class="network-toolbar"><span>РАБОТНИ WI-FI МРЕЖИ · 2.4 GHz</span><div><button id="all-on" class="quiet">Включи всички</button><button id="all-off" class="quiet">Изключи всички</button></div></div>
+      <div id="network-list" class="network-list"></div><p class="hint">Новите Wi-Fi мрежи използват избрания LAN bridge и неговите DHCP и интернет настройки. Не създават отделни VLAN или изолирани подмрежи.</p>
+    </section>
+    <section id="onboard" class="card onboard"><div class="section-title"><div><span class="eyebrow">ПОДГОТОВКА НА УСТРОЙСТВА</span><h2>От кутията към мрежата.</h2><p>Открий фабричните Shelly AP и избери кои да добавиш към обекта.</p></div><span class="line-art">⌁</span></div>
+      <div class="onboard-controls"><label>Мрежа на обекта<select id="target"><option value="">Избери обект…</option></select></label><button id="scan" class="secondary">⌕ &nbsp; Сканирай за Shelly</button></div>
+      <label class="check warning-check"><input id="ack" type="checkbox"><span>Работя през 5 GHz или кабел. Разбирам, че 2.4 GHz мрежите временно ще прекъснат при сканиране и добавяне.</span></label>
+      <div id="devices" class="devices"><p class="empty">Все още няма открити устройства.<br><span>Включи Shelly устройствата във фабричен AP режим и стартирай сканиране.</span></p></div>
+      <div class="options"><label class="check"><input id="rename" type="checkbox" checked>Име на обекта + пореден номер</label><label class="check"><input id="disable-ap" type="checkbox" checked>Изключи Shelly AP след потвърдено свързване</label></div>
+      <div class="job-strip"><div><span class="online-dot"></span><span id="job-message" role="status">Готов за работа</span></div><div><button id="stop" class="quiet" hidden>Спри след безопасно възстановяване</button><button id="provision" class="primary">Добави избраните →</button></div></div>
+      <div id="results"></div><p class="hint">Shelly Gen2+ • DHCP • Без автоматично включване на облака. При непотвърдено свързване AP остава достъпен.</p>
+    </section>
+    <section id="history" class="section-block"><div class="section-title"><div><h2>Последни операции</h2><p>Резултатите се пазят локално на станцията.</p></div><span class="badge neutral">ЛОКАЛЕН ЖУРНАЛ</span></div><div id="history-list" class="card history-list"></div></section>
+    <footer><span id="router-detail">RouterOS</span><span>Локално. Под твой контрол.</span></footer>
+  </div>
+</main>
+<dialog id="project-dialog"><form id="project-form"><div class="section-title"><h2>Нов обект</h2><button type="button" id="close-dialog" class="quiet" aria-label="Затвори">✕</button></div><p>Създай Wi-Fi мрежа или запази профил за съществуваща разрешена мрежа.</p><label>Мрежа<select id="existing"><option value="">Създай нова Wi-Fi мрежа</option></select></label><label>Име на обекта<input name="title" maxlength="80" required placeholder="Например: Апартамент — София"></label><label>Wi-Fi име (SSID)<input name="ssid" required placeholder="Project-Sofia" maxlength="32"></label><label>Wi-Fi парола<input name="password" type="password" required minlength="8" maxlength="63" autocomplete="new-password"></label><p class="hint">Новата мрежа се създава изключена. За съществуваща мрежа въведи настоящата ѝ парола.</p><button type="submit" class="primary">Запази обекта</button></form></dialog>
+<div id="toast" class="toast" role="alert" hidden></div>
+</body></html>

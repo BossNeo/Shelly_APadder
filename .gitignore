@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+data/
+output/
+*.tar
+*.tar.gz

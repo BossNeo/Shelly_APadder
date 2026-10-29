@@ -1,0 +1,9 @@
+{
+  "allow_changes": false,
+  "expected_board": "REPLACE_WITH_EXACT_BOARD_NAME_FROM_SYSTEM_RESOURCE",
+  "radio_2g": "REPLACE_WITH_VERIFIED_2_4_GHZ_MASTER",
+  "protected_5g": "REPLACE_WITH_VERIFIED_5_GHZ_MASTER",
+  "lan_bridge": "REPLACE_WITH_EXISTING_LAN_BRIDGE",
+  "allowed_existing": [],
+  "allowed_hosts": ["192.168.88.1:8088", "172.31.253.2:8088", "localhost:8088", "127.0.0.1:8088"]
+}
