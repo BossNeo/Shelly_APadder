@@ -19,7 +19,8 @@ function capacity(value) {const n=Number(value);return Number.isFinite(n)?Math.r
 function busy(on) {const blocked=on||!state?.allow_changes||!!state?.recovery||!!state?.warning&&$('demo-badge').hidden;for(const id of ['new-project','all-on','all-off','scan','provision'])$(id).disabled=blocked;for(const b of document.querySelectorAll('.toggle'))b.disabled=blocked;$('refresh').disabled=on;$('target').disabled=on;$('stop').hidden=!on;$('mode').textContent=on?'Добавяне':'Рутер';$('mode-detail').textContent=on?'Временно използване на 2.4 GHz':'Нормална работа на мрежите';}
 function render() {
   $('login').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;
-  $('warning').hidden=!state.warning;$('warning').textContent=state.warning;$('recovery').hidden=!state.recovery;
+  const warning=[state.warning,!state.allow_changes?'Панелът е само за преглед. Включването, създаването на мрежи и сканирането още не са разрешени.':''].filter(Boolean).join(' ');
+  $('warning').hidden=!warning;$('warning').textContent=warning;$('recovery').hidden=!state.recovery;
   $('ram').textContent=capacity(state.resource['free-memory']);$('storage').textContent=capacity(state.resource['free-hdd-space'])+' свободно място';
   $('router-detail').textContent=state.resource['board-name']+' • RouterOS '+state.resource.version;
   const managed=state.interfaces.filter(i=>i.managed), protectedNet=state.interfaces.find(i=>i.protected);

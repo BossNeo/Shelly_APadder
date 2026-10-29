@@ -98,6 +98,26 @@ func TestLoginRateLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestFiveCharacterPanelPassword(t *testing.T) {
+	s, _ := fixture(t)
+	for _, password := range []string{"", "1234"} {
+		if _, err := newApp(s, password, false, false); err == nil {
+			t.Fatal("accepted a password shorter than five characters")
+		}
+	}
+	a, err := newApp(s, "ADMIN", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for password, want := range map[string]int{"ADMIN": 200, "admin": 401, "previous-password": 401} {
+		body, _ := json.Marshal(Row{"password": password})
+		w := request(a, "POST", "/api/login", "127.0.0.1:8088", "http://127.0.0.1:8088", string(body), "", "")
+		if w.Code != want {
+			t.Fatalf("login status = %d, want %d", w.Code, want)
+		}
+	}
+}
 func TestRouterErrorsDoNotEchoSecretsAndRedirectsAreBlocked(t *testing.T) {
 	secret := "secret-wifi-password"
 	redirected := false

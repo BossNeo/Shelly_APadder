@@ -43,6 +43,9 @@ type App struct {
 }
 
 func newApp(s *Service, password string, demo, secure bool) (*App, error) {
+	if len(password) < 5 {
+		return nil, errors.New("PANEL_PASSWORD трябва да има поне 5 знака")
+	}
 	salt := []byte(token())
 	hash, e := pbkdf2.Key(sha256.New, password, salt, 210000, 32)
 	if e != nil {
@@ -297,8 +300,8 @@ func runMain() error {
 		if json.Unmarshal(b, &config) != nil {
 			return errors.New("Невалиден config.json")
 		}
-		if len(password) < 12 {
-			return errors.New("PANEL_PASSWORD трябва да има поне 12 знака")
+		if len(password) < 5 {
+			return errors.New("PANEL_PASSWORD трябва да има поне 5 знака")
 		}
 		router, e = newRouter(os.Getenv("ROUTER_URL"), os.Getenv("ROUTER_USER"), os.Getenv("ROUTER_PASSWORD"), os.Getenv("ROUTER_CA_FILE"))
 		if e != nil {

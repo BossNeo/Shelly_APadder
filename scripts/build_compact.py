@@ -109,6 +109,7 @@ def main():
                            ("deploy/chateau-credentials.rsc.example", "chateau-credentials.rsc.example"),
                            ("deploy/upload-chateau.ps1", "upload-chateau.ps1"),
                            ("deploy/enable-chateau.ps1", "enable-chateau.ps1"),
+                           ("deploy/set-panel-password.ps1", "set-panel-password.ps1"),
                            ("docs/INSTALL.bg.md", "INSTALL.bg.md")):
         shutil.copyfile(ROOT / source, out / target)
     print(json.dumps(report, indent=2))
